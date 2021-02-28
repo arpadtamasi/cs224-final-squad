@@ -21,7 +21,7 @@ import util
 from args import get_test_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+from models import create_model
 from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -42,9 +42,8 @@ def main(args):
     word_vectors = util.torch_from_json(args.word_emb_file)
 
     # Get model
-    log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors,
-                  hidden_size=args.hidden_size)
+    log.info(f'Building {args.name} model...')
+    model = create_model(args.name, word_vectors, args.hidden_size)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
