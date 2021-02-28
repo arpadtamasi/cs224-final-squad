@@ -25,9 +25,6 @@ def get_setup_args():
     parser.add_argument('--glove_url',
                         type=str,
                         default='http://nlp.stanford.edu/data/glove.840B.300d.zip')
-    parser.add_argument('--glove_char_url',
-                        type=str,
-                        default='https://raw.githubusercontent.com/minimaxir/char-embeddings/master/glove.840B.300d-char.txt')
     parser.add_argument('--dev_meta_file',
                         type=str,
                         default='./data/dev_meta.json')

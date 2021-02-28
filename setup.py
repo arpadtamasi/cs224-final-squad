@@ -11,18 +11,19 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
-import numpy as np
 import os
-import spacy
-import ujson as json
 import urllib.request
-
-from args import get_setup_args
 from codecs import open
 from collections import Counter
 from subprocess import run
-from tqdm import tqdm
 from zipfile import ZipFile
+
+import numpy as np
+import spacy
+import ujson as json
+from tqdm import tqdm
+
+from args import get_setup_args
 
 
 def download_url(url, output_path, show_progress=True):
@@ -44,21 +45,18 @@ def download_url(url, output_path, show_progress=True):
         urllib.request.urlretrieve(url, output_path)
 
 
-def url_to_data_path(url, dir=None):
-    if dir is None:
-        return os.path.join('./data/', url.split('/')[-1])
-    else:
-        return os.path.join('./data/', dir, url.split('/')[-1])
+def url_to_data_path(url):
+    return os.path.join('./data/', dir, url.split('/')[-1])
+
 
 def download(args):
     downloads = [
         # Can add other downloads here (e.g., other word vectors)
-        ('GloVe word vectors', args.glove_url, None),
-        ('GloVe character vectors', args.glove_char_url, 'glove.840B.300d'),
+        ('GloVe word vectors', args.glove_url),
     ]
 
-    for name, url, dir in downloads:
-        output_path = url_to_data_path(url, dir)
+    for name, url in downloads:
+        output_path = url_to_data_path(url)
         if not os.path.exists(output_path):
             print(f'Downloading {name}...')
             download_url(url, output_path)
@@ -72,6 +70,7 @@ def download(args):
 
     print('Downloading spacy language model...')
     run(['python', '-m', 'spacy', 'download', 'en'])
+
 
 def word_tokenize(sent):
     doc = nlp(sent)
@@ -350,11 +349,10 @@ def save(filename, obj, message=None):
 
 
 def pre_process(args):
-    if all(
-        [os.path.exists(p) for p in
-            [args.word_emb_file, args.char_emb_file, args.train_eval_file,
-            args.dev_eval_file, args.word2idx_file, args.char2idx_file, args.dev_meta_file]
-        ]):
+    if all([os.path.exists(p) for p in [
+        args.word_emb_file, args.char_emb_file, args.train_eval_file,
+        args.dev_eval_file, args.word2idx_file, args.char2idx_file, args.dev_meta_file
+    ]]):
         print("Preprocess skipped: all target files exist")
         return
 
@@ -364,7 +362,7 @@ def pre_process(args):
     word_emb_mat, word2idx_dict = get_embedding(
         word_counter, 'word', emb_file=args.glove_file, vec_size=args.glove_dim, num_vectors=args.glove_num_vecs)
     char_emb_mat, char2idx_dict = get_embedding(
-        char_counter, 'char', emb_file=None, vec_size=args.char_dim)
+        char_counter, 'char', emb_file=args.glove_char_file, vec_size=args.char_dim)
 
     # Process dev and test sets
     dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)
