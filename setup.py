@@ -44,18 +44,21 @@ def download_url(url, output_path, show_progress=True):
         urllib.request.urlretrieve(url, output_path)
 
 
-def url_to_data_path(url):
-    return os.path.join('./data/', url.split('/')[-1])
-
+def url_to_data_path(url, dir=None):
+    if dir is None:
+        return os.path.join('./data/', url.split('/')[-1])
+    else:
+        return os.path.join('./data/', dir, url.split('/')[-1])
 
 def download(args):
     downloads = [
         # Can add other downloads here (e.g., other word vectors)
-        ('GloVe word vectors', args.glove_url),
+        ('GloVe word vectors', args.glove_url, None),
+        ('GloVe character vectors', args.glove_char_url, 'glove.840B.300d'),
     ]
 
-    for name, url in downloads:
-        output_path = url_to_data_path(url)
+    for name, url, dir in downloads:
+        output_path = url_to_data_path(url, dir)
         if not os.path.exists(output_path):
             print(f'Downloading {name}...')
             download_url(url, output_path)
@@ -347,6 +350,14 @@ def save(filename, obj, message=None):
 
 
 def pre_process(args):
+    if all(
+        [os.path.exists(p) for p in
+            [args.word_emb_file, args.char_emb_file, args.train_eval_file,
+            args.dev_eval_file, args.word2idx_file, args.char2idx_file, args.dev_meta_file]
+        ]):
+        print("Preprocess skipped: all target files exist")
+        return
+
     # Process training set and use it to decide on the word/character vocabularies
     word_counter, char_counter = Counter(), Counter()
     train_examples, train_eval = process_file(args.train_file, "train", word_counter, char_counter)

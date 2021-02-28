@@ -4,23 +4,24 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
-import numpy as np
 import random
+from collections import OrderedDict
+from json import dumps
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
-import util
-
-from args import get_train_args
-from collections import OrderedDict
-from json import dumps
-from models import BiDAF
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
+
+import util
+from args import get_train_args
+from models import create_model
 from util import collate_fn, SQuAD
 
 
@@ -45,10 +46,8 @@ def main(args):
     word_vectors = util.torch_from_json(args.word_emb_file)
 
     # Get model
-    log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors,
-                  hidden_size=args.hidden_size,
-                  drop_prob=args.drop_prob)
+    log.info(f'Building {args.name} model...')
+    model = create_model(args.name, word_vectors, args.hidden_size, args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -112,7 +111,7 @@ def main(args):
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
-                scheduler.step(step // batch_size)
+                scheduler.step() # deprecated (step // batch_size)
                 ema(model, step // batch_size)
 
                 # Log info
@@ -153,6 +152,7 @@ def main(args):
                                    step=step,
                                    split='dev',
                                    num_visuals=args.num_visuals)
+
 
 
 def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):

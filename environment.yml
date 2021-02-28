@@ -4,7 +4,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.6
+  - python
   - ujson
   - numpy
   - pip
@@ -14,6 +14,6 @@ dependencies:
   - tensorboardX
   - tqdm
   - urllib3
-  - pytorch=1.0.0
+  - pytorch=1.7.1
   - pip:
-    - torch==1.0.0
+    - torch==1.7.1

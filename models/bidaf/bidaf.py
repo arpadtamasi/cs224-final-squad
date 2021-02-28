@@ -4,9 +4,13 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
-import layers
 import torch
 import torch.nn as nn
+
+import models.bidaf.modules.bidaf_attention
+import models.bidaf.modules.bidaf_output
+import models.bidaf.modules.embedding
+import models.bidaf.modules.rnn_encoder
 
 
 class BiDAF(nn.Module):
@@ -31,25 +35,25 @@ class BiDAF(nn.Module):
     """
     def __init__(self, word_vectors, hidden_size, drop_prob=0.):
         super(BiDAF, self).__init__()
-        self.emb = layers.Embedding(word_vectors=word_vectors,
-                                    hidden_size=hidden_size,
-                                    drop_prob=drop_prob)
+        self.emb = models.bidaf.modules.embedding.Embedding(word_vectors=word_vectors,
+                                                            hidden_size=hidden_size,
+                                                            drop_prob=drop_prob)
 
-        self.enc = layers.RNNEncoder(input_size=hidden_size,
-                                     hidden_size=hidden_size,
-                                     num_layers=1,
-                                     drop_prob=drop_prob)
+        self.enc = models.bidaf.modules.rnn_encoder.RNNEncoder(input_size=hidden_size,
+                                                               hidden_size=hidden_size,
+                                                               num_layers=1,
+                                                               drop_prob=drop_prob)
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob)
+        self.att = models.bidaf.modules.bidaf_attention.BiDAFAttention(hidden_size=2 * hidden_size,
+                                                                       drop_prob=drop_prob)
 
-        self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
-                                     hidden_size=hidden_size,
-                                     num_layers=2,
-                                     drop_prob=drop_prob)
+        self.mod = models.bidaf.modules.rnn_encoder.RNNEncoder(input_size=8 * hidden_size,
+                                                               hidden_size=hidden_size,
+                                                               num_layers=2,
+                                                               drop_prob=drop_prob)
 
-        self.out = layers.BiDAFOutput(hidden_size=hidden_size,
-                                      drop_prob=drop_prob)
+        self.out = models.bidaf.modules.bidaf_output.BiDAFOutput(hidden_size=hidden_size,
+                                                                 drop_prob=drop_prob)
 
     def forward(self, cw_idxs, qw_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
