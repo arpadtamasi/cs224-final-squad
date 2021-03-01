@@ -45,8 +45,11 @@ def download_url(url, output_path, show_progress=True):
         urllib.request.urlretrieve(url, output_path)
 
 
-def url_to_data_path(url):
-    return os.path.join('./data/', dir, url.split('/')[-1])
+def url_to_data_path(url, tiny=False):
+    if tiny:
+        return os.path.join('./data/tiny', url.split('/')[-1])
+    else:
+        return os.path.join('./data/', url.split('/')[-1])
 
 
 def download(args):
@@ -97,6 +100,7 @@ def process_file(filename, data_type, word_counter, char_counter):
     total = 0
     with open(filename, "r") as fh:
         source = json.load(fh)
+
         for article in tqdm(source["data"]):
             for para in article["paragraphs"]:
                 context = para["context"].replace(
@@ -362,7 +366,7 @@ def pre_process(args):
     word_emb_mat, word2idx_dict = get_embedding(
         word_counter, 'word', emb_file=args.glove_file, vec_size=args.glove_dim, num_vectors=args.glove_num_vecs)
     char_emb_mat, char2idx_dict = get_embedding(
-        char_counter, 'char', emb_file=args.glove_char_file, vec_size=args.char_dim)
+        char_counter, 'char', emb_file=None, vec_size=args.char_dim)
 
     # Process dev and test sets
     dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)
@@ -395,10 +399,10 @@ if __name__ == '__main__':
     nlp = spacy.blank("en")
 
     # Preprocess dataset
-    args_.train_file = url_to_data_path(args_.train_url)
-    args_.dev_file = url_to_data_path(args_.dev_url)
+    args_.train_file = url_to_data_path(args_.train_url, args_.tiny)
+    args_.dev_file = url_to_data_path(args_.dev_url, args_.tiny)
     if args_.include_test_examples:
-        args_.test_file = url_to_data_path(args_.test_url)
+        args_.test_file = url_to_data_path(args_.test_url, args_.tiny)
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = f'.txt' if glove_dir.endswith('d') else f'.{args_.glove_dim}d.txt'
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)

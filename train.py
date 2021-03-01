@@ -44,10 +44,16 @@ def main(args):
     # Get embeddings
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
+    char_vectors = util.torch_from_json(args.char_emb_file)
 
     # Get model
     log.info(f'Building {args.name} model...')
-    model = create_model(args.name, word_vectors, args.hidden_size, args.drop_prob)
+    model = create_model(
+        args.name,
+        hidden_size=args.hidden_size,
+        word_vectors=word_vectors, char_vectors=char_vectors,
+        drop_prob=args.drop_prob
+    )
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -75,15 +81,15 @@ def main(args):
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
-                                   shuffle=True,
+                                   shuffle=False, # TODO @rp True
                                    num_workers=args.num_workers,
-                                   collate_fn=collate_fn)
+                                   collate_fn=None if args.name == 'qanet' else collate_fn)
     dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)
     dev_loader = data.DataLoader(dev_dataset,
                                  batch_size=args.batch_size,
                                  shuffle=False,
                                  num_workers=args.num_workers,
-                                 collate_fn=collate_fn)
+                                 collate_fn=None if args.name == 'qanet' else collate_fn)
 
     # Train
     log.info('Training...')
@@ -97,12 +103,18 @@ def main(args):
             for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
+                cc_idxs = cc_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
+                qc_idxs = qc_idxs.to(device)
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, qw_idxs)
+                # if use_char_vectors:
+                #     log_p1, log_p2 = model(cw_idxs.to(device), qw_idxs.to(device))
+                # else:
+                log_p1, log_p2 = model(cw_idxs.to(device), cc_idxs.to(device), qw_idxs.to(device), qc_idxs.to(device))
+
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
@@ -167,11 +179,13 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
         for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in data_loader:
             # Setup for forward
             cw_idxs = cw_idxs.to(device)
+            cc_idxs = cc_idxs.to(device)
             qw_idxs = qw_idxs.to(device)
+            qc_idxs = qc_idxs.to(device)
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, qw_idxs)
+            log_p1, log_p2 = model(cw_idxs.to(device), cc_idxs.to(device), qw_idxs.to(device), qc_idxs.to(device))
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)

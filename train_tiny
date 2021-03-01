@@ -1,0 +1,25 @@
+#!/bin/bash
+
+python train.py -n baseline \
+  --num_epochs 20 \
+  --eval_steps=500 \
+  --train_record_file="./data/tiny/train.npz" \
+  --dev_record_file="./data/tiny/dev.npz" \
+  --test_record_file="./data/tiny/test.npz" \
+  --word_emb_file="./data/tiny/word_emb.json" \
+  --char_emb_file="./data/tiny/char_emb.json" \
+  --train_eval_file="./data/tiny/train_eval.json" \
+  --dev_eval_file="./data/tiny/dev_eval.json" \
+  --test_eval_file="./data/tiny/test_eval.json"
+
+python train.py -n qanet \
+  --num_epochs 20 \
+  --eval_steps=500 \
+  --train_record_file="./data/tiny/train.npz" \
+  --dev_record_file="./data/tiny/dev.npz" \
+  --test_record_file="./data/tiny/test.npz" \
+  --word_emb_file="./data/tiny/word_emb.json" \
+  --char_emb_file="./data/tiny/char_emb.json" \
+  --train_eval_file="./data/tiny/train_eval.json" \
+  --dev_eval_file="./data/tiny/dev_eval.json" \
+  --test_eval_file="./data/tiny/test_eval.json"

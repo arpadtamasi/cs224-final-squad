@@ -7,10 +7,10 @@ Author:
 import torch
 import torch.nn as nn
 
-import models.bidaf.modules.bidaf_attention
-import models.bidaf.modules.bidaf_output
-import models.bidaf.modules.embedding
-import models.bidaf.modules.rnn_encoder
+from .modules.bidaf_attention import BiDAFAttention
+from .modules.bidaf_output import BiDAFOutput
+from .modules.embedding import Embedding
+from .modules.rnn_encoder import RNNEncoder
 
 
 class BiDAF(nn.Module):
@@ -36,30 +36,42 @@ class BiDAF(nn.Module):
 
     def __init__(self, word_vectors, hidden_size, drop_prob=0.):
         super(BiDAF, self).__init__()
-        self.emb = models.bidaf.modules.embedding.Embedding(word_vectors=word_vectors,
-                                                            hidden_size=hidden_size,
-                                                            drop_prob=drop_prob)
+        self.emb = Embedding(
+            word_vectors=word_vectors,
+            hidden_size=hidden_size,
+            drop_prob=drop_prob
+        )
 
-        self.enc = models.bidaf.modules.rnn_encoder.RNNEncoder(input_size=hidden_size,
-                                                               hidden_size=hidden_size,
-                                                               num_layers=1,
-                                                               drop_prob=drop_prob)
+        self.enc = RNNEncoder(
+            input_size=hidden_size,
+            hidden_size=hidden_size,
+            num_layers=1,
+            drop_prob=drop_prob
+        )
 
-        self.att = models.bidaf.modules.bidaf_attention.BiDAFAttention(hidden_size=2 * hidden_size,
-                                                                       drop_prob=drop_prob)
+        self.att = BiDAFAttention(
+            hidden_size=2 * hidden_size,
+            drop_prob=drop_prob
+        )
 
-        self.mod = models.bidaf.modules.rnn_encoder.RNNEncoder(input_size=8 * hidden_size,
-                                                               hidden_size=hidden_size,
-                                                               num_layers=2,
-                                                               drop_prob=drop_prob)
+        self.mod = RNNEncoder(
+            input_size=8 * hidden_size,
+            hidden_size=hidden_size,
+            num_layers=2,
+            drop_prob=drop_prob
+        )
 
-        self.out = models.bidaf.modules.bidaf_output.BiDAFOutput(hidden_size=hidden_size,
-                                                                 drop_prob=drop_prob)
+        self.out = BiDAFOutput(
+            hidden_size=hidden_size,
+            drop_prob=drop_prob
+        )
 
-    def forward(self, cw_idxs, qw_idxs):
-        c_mask = torch.zeros_like(cw_idxs) != cw_idxs
-        q_mask = torch.zeros_like(qw_idxs) != qw_idxs
-        c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
+    def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
+        c_mask = torch.zeros_like(cw_idxs) != cw_idxs # (batch_size, c_len)
+        q_mask = torch.zeros_like(qw_idxs) != qw_idxs # (batch_size, q_len)
+
+        c_len = c_mask.sum(-1) # (batch_size)
+        q_len = q_mask.sum(-1) # (batch_size)
 
         c_emb = self.emb(cw_idxs)  # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs)  # (batch_size, q_len, hidden_size)
@@ -67,11 +79,16 @@ class BiDAF(nn.Module):
         c_enc = self.enc(c_emb, c_len)  # (batch_size, c_len, 2 * hidden_size)
         q_enc = self.enc(q_emb, q_len)  # (batch_size, q_len, 2 * hidden_size)
 
-        att = self.att(c_enc, q_enc,
-                       c_mask, q_mask)  # (batch_size, c_len, 8 * hidden_size)
+        att = self.att(
+            c_enc, q_enc,
+            c_mask, q_mask
+        )  # (batch_size, c_len, 8 * hidden_size)
 
         mod = self.mod(att, c_len)  # (batch_size, c_len, 2 * hidden_size)
 
-        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
-
-        return out
+        log_p1, log_p2 = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        spans = list(zip(
+            torch.argmax(log_p1, -1).tolist(),
+            torch.argmax(log_p2, -1).tolist()
+        ))
+        return log_p1, log_p2
