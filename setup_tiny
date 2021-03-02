@@ -1,0 +1,15 @@
+#!/bin/sh
+
+python setup.py \
+    --word_emb_file="./data/tiny/word_emb.json" \
+    --char_emb_file="./data/tiny/char_emb.json" \
+    --train_eval_file="./data/tiny/train_eval.json" \
+    --train_record_file="./data/tiny/train.npz" \
+    --dev_eval_file="./data/tiny/dev_eval.json" \
+    --dev_meta_file="./data/tiny/dev_meta.json" \
+    --dev_record_file="./data/tiny/dev.npz" \
+    --test_eval_file="./data/tiny/test_eval.json" \
+    --test_meta_file="./data/tiny/test_meta.json" \
+    --test_record_file="./data/tiny/test.npz" \
+    --word2idx_file="./data/tiny/word2idx.json" \
+    --char2idx_file="./data/tiny/char2idx.json"

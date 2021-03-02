@@ -1,7 +1,7 @@
 from torch import nn as nn
 
-from .rnn_encoder import RNNEncoder
 from util import masked_softmax
+from .rnn_encoder import RNNEncoder
 
 
 class BiDAFOutput(nn.Module):

@@ -11,18 +11,20 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
-import numpy as np
 import os
-import spacy
-import ujson as json
 import urllib.request
-
-from args import get_setup_args
 from codecs import open
 from collections import Counter
 from subprocess import run
-from tqdm import tqdm
 from zipfile import ZipFile
+
+import numpy as np
+import spacy
+import ujson as json
+from tqdm import tqdm
+
+from args import get_setup_args
+from util import url_to_data_path, preprocessed_path
 
 
 def download_url(url, output_path, show_progress=True):
@@ -44,21 +46,17 @@ def download_url(url, output_path, show_progress=True):
         urllib.request.urlretrieve(url, output_path)
 
 
-def url_to_data_path(url, dir=None):
-    if dir is None:
-        return os.path.join('./data/', url.split('/')[-1])
-    else:
-        return os.path.join('./data/', dir, url.split('/')[-1])
+
+
 
 def download(args):
     downloads = [
         # Can add other downloads here (e.g., other word vectors)
-        ('GloVe word vectors', args.glove_url, None),
-        ('GloVe character vectors', args.glove_char_url, 'glove.840B.300d'),
+        ('GloVe word vectors', args.glove_url),
     ]
 
-    for name, url, dir in downloads:
-        output_path = url_to_data_path(url, dir)
+    for name, url in downloads:
+        output_path = url_to_data_path(url, args.data_dir, None)
         if not os.path.exists(output_path):
             print(f'Downloading {name}...')
             download_url(url, output_path)
@@ -72,6 +70,7 @@ def download(args):
 
     print('Downloading spacy language model...')
     run(['python', '-m', 'spacy', 'download', 'en'])
+
 
 def word_tokenize(sent):
     doc = nlp(sent)
@@ -98,6 +97,7 @@ def process_file(filename, data_type, word_counter, char_counter):
     total = 0
     with open(filename, "r") as fh:
         source = json.load(fh)
+
         for article in tqdm(source["data"]):
             for para in article["paragraphs"]:
                 context = para["context"].replace(
@@ -350,40 +350,63 @@ def save(filename, obj, message=None):
 
 
 def pre_process(args):
-    if all(
-        [os.path.exists(p) for p in
-            [args.word_emb_file, args.char_emb_file, args.train_eval_file,
-            args.dev_eval_file, args.word2idx_file, args.char2idx_file, args.dev_meta_file]
-        ]):
+    train_file = args.train_file
+    dev_file = args.dev_file
+    test_file = args.test_file
+
+    word_emb_file = preprocessed_path(args.word_emb_file, args.data_dir, args.dataset)
+    char_emb_file = preprocessed_path(args.char_emb_file, args.data_dir, args.dataset)
+    word2idx_file = preprocessed_path(args.word2idx_file, args.data_dir, args.dataset)
+    char2idx_file = preprocessed_path(args.char2idx_file, args.data_dir, args.dataset)
+
+    train_eval_file = preprocessed_path(args.train_eval_file, args.data_dir, args.dataset)
+    dev_eval_file = preprocessed_path(args.dev_eval_file, args.data_dir, args.dataset)
+
+    dev_meta_file = preprocessed_path(args.dev_meta_file, args.data_dir, args.dataset)
+    test_meta_file = preprocessed_path(args.test_meta_file, args.data_dir, args.dataset)
+
+    train_record_file = preprocessed_path(args.train_record_file, args.data_dir, args.dataset)
+    dev_record_file = preprocessed_path(args.dev_record_file, args.data_dir, args.dataset)
+    test_record_file = preprocessed_path(args.test_record_file, args.data_dir, args.dataset)
+
+    preprocess_targets = [
+        word_emb_file, char_emb_file,
+        word2idx_file, char2idx_file,
+        train_eval_file, dev_eval_file,
+        dev_meta_file, test_meta_file,
+        train_record_file, dev_record_file, test_record_file
+    ]
+
+    if all([os.path.exists(p) for p in preprocess_targets]):
         print("Preprocess skipped: all target files exist")
         return
 
     # Process training set and use it to decide on the word/character vocabularies
     word_counter, char_counter = Counter(), Counter()
-    train_examples, train_eval = process_file(args.train_file, "train", word_counter, char_counter)
+    train_examples, train_eval = process_file(train_file, "train", word_counter, char_counter)
     word_emb_mat, word2idx_dict = get_embedding(
         word_counter, 'word', emb_file=args.glove_file, vec_size=args.glove_dim, num_vectors=args.glove_num_vecs)
     char_emb_mat, char2idx_dict = get_embedding(
         char_counter, 'char', emb_file=None, vec_size=args.char_dim)
 
     # Process dev and test sets
-    dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)
-    build_features(args, train_examples, "train", args.train_record_file, word2idx_dict, char2idx_dict)
-    dev_meta = build_features(args, dev_examples, "dev", args.dev_record_file, word2idx_dict, char2idx_dict)
+    dev_examples, dev_eval = process_file(dev_file, "dev", word_counter, char_counter)
+    build_features(args, train_examples, "train", train_record_file, word2idx_dict, char2idx_dict)
+    dev_meta = build_features(args, dev_examples, "dev", dev_record_file, word2idx_dict, char2idx_dict)
     if args.include_test_examples:
-        test_examples, test_eval = process_file(args.test_file, "test", word_counter, char_counter)
+        test_examples, test_eval = process_file(test_file, "test", word_counter, char_counter)
         save(args.test_eval_file, test_eval, message="test eval")
         test_meta = build_features(args, test_examples, "test",
-                                   args.test_record_file, word2idx_dict, char2idx_dict, is_test=True)
-        save(args.test_meta_file, test_meta, message="test meta")
+                                   test_record_file, word2idx_dict, char2idx_dict, is_test=True)
+        save(test_meta_file, test_meta, message="test meta")
 
-    save(args.word_emb_file, word_emb_mat, message="word embedding")
-    save(args.char_emb_file, char_emb_mat, message="char embedding")
-    save(args.train_eval_file, train_eval, message="train eval")
-    save(args.dev_eval_file, dev_eval, message="dev eval")
-    save(args.word2idx_file, word2idx_dict, message="word dictionary")
-    save(args.char2idx_file, char2idx_dict, message="char dictionary")
-    save(args.dev_meta_file, dev_meta, message="dev meta")
+    save(word_emb_file, word_emb_mat, message="word embedding")
+    save(char_emb_file, char_emb_mat, message="char embedding")
+    save(train_eval_file, train_eval, message="train eval")
+    save(dev_eval_file, dev_eval, message="dev eval")
+    save(word2idx_file, word2idx_dict, message="word dictionary")
+    save(char2idx_file, char2idx_dict, message="char dictionary")
+    save(dev_meta_file, dev_meta, message="dev meta")
 
 
 if __name__ == '__main__':
@@ -397,11 +420,11 @@ if __name__ == '__main__':
     nlp = spacy.blank("en")
 
     # Preprocess dataset
-    args_.train_file = url_to_data_path(args_.train_url)
-    args_.dev_file = url_to_data_path(args_.dev_url)
+    args_.train_file = url_to_data_path(args_.train_url, args_.data_dir, args_.dataset)
+    args_.dev_file = url_to_data_path(args_.dev_url, args_.data_dir, args_.dataset)
     if args_.include_test_examples:
-        args_.test_file = url_to_data_path(args_.test_url)
-    glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
+        args_.test_file = url_to_data_path(args_.test_url, args_.data_dir, args_.dataset)
+    glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''), args_.data_dir, None)
     glove_ext = f'.txt' if glove_dir.endswith('d') else f'.{args_.glove_dim}d.txt'
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
     pre_process(args_)
