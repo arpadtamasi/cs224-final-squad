@@ -4,53 +4,74 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .modules.attention import EncoderBlock
 from .modules.depthwise_separable_conv import DepthwiseSeparableConv
 from .modules.embedding import Embedding
 from .modules.functions import mask_logits
-from .modules.attention import EncoderBlock
+
 
 class QANet(nn.Module):
-    def __init__(self, word_mat, char_mat, d_word, d_char, d_model, n_head, len_c, len_q, dropout, dropout_char, freeze_char_embedding):
+    def __init__(self, word_mat, char_mat, d_model, n_head, len_c, len_q, dropout, dropout_char, freeze_char_embedding):
         super(QANet, self).__init__()
+        d_word = word_mat.shape[-1]
+        d_char = char_mat.shape[-1]
         self.char_emb = nn.Embedding.from_pretrained(torch.Tensor(char_mat), freeze=freeze_char_embedding)
         self.word_emb = nn.Embedding.from_pretrained(torch.Tensor(word_mat))
         self.emb = Embedding(d_word, d_char, dropout, dropout_char)
-        self.context_conv = DepthwiseSeparableConv(d_word + d_char, d_model, 5)
-        self.question_conv = DepthwiseSeparableConv(d_word + d_char, d_model, 5)
+        d_embed = d_word + d_char
+
+        self.context_conv = DepthwiseSeparableConv(d_embed, d_model, 5)
+        self.question_conv = DepthwiseSeparableConv(d_embed, d_model, 5)
         self.c_emb_enc = EncoderBlock(conv_num=4, ch_num=d_model, k=7, length=len_c, d_model=d_model, n_head=n_head, dropout=dropout)
         self.q_emb_enc = EncoderBlock(conv_num=4, ch_num=d_model, k=7, length=len_q, d_model=d_model, n_head=n_head, dropout=dropout)
         self.cq_att = CQAttention(d_model, dropout)
         self.cq_resizer = DepthwiseSeparableConv(d_model * 4, d_model, 5)
         enc_blk = EncoderBlock(conv_num=2, ch_num=d_model, k=5, length=len_c, d_model=d_model, n_head=n_head, dropout=dropout)
         self.model_enc_blks = nn.ModuleList([enc_blk] * 7)
-        self.out = Pointer(d_model)
+
+        self.linear_start = nn.Linear(d_model * 2, 1)
+        self.linear_end = nn.Linear(d_model * 2, 1)
 
     # noinspection PyUnresolvedReferences
-    def forward(self, Cwid, Ccid, Qwid, Qcid):
-        # Cwid, Ccid: batch_size x para_limit, batch_size x para_limit x char_limit
-        # Qwid, Qcid: batch_size x ques_limit, batch_size x ques_limit x char_limit
-        cmask = (torch.zeros_like(Cwid) == Cwid).float()  # batch_size x para_limit
-        qmask = (torch.zeros_like(Qwid) == Qwid).float()  # batch_size x ques_limit
-        Cw, Cc = self.word_emb(Cwid), self.char_emb(Ccid)  # batch_size x para_limit x word_embed_size, batch_size x para_limit x char_limit x char_embed_size
-        Qw, Qc = self.word_emb(Qwid), self.char_emb(Qcid)  # batch_size x ques_limit x word_embed_size, batch_size x ques_limit x char_limit x char_embed_size
-        C, Q = self.emb(Cc, Cw), self.emb(Qc, Qw)  # batch_size x (word_embed_size + char_embed_size) x para_limit, batch_size x (word_embed_size + char_embed_size) x ques_limit
-        C = self.context_conv(C)  # batch_size x d_model x para_limit
-        Q = self.question_conv(Q)  # batch_size x d_model x ques_limit
-        Ce = self.c_emb_enc(C, cmask)  # batch_size x d_model x para_limit
-        Qe = self.q_emb_enc(Q, qmask)  # batch_size x d_model x ques_limit
+    def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
+        c_mask = (torch.zeros_like(cw_idxs) != cw_idxs).float()  # batch_size x para_limit
+        q_mask = (torch.zeros_like(qw_idxs) != qw_idxs).float()  # batch_size x ques_limit
 
-        X = self.cq_att(Ce, Qe, cmask, qmask)  # batch_size x (d_model * 4) x para_limit
-        M1 = self.cq_resizer(X)  # batch_size x d_model x para_limit
+        cw_emb, cc_emb = self.word_emb(cw_idxs), self.char_emb(cc_idxs)  # batch_size x para_limit x w_embed, batch_size x para_limit x char_limit x c_embed
+        qw_emb, qc_emb = self.word_emb(qw_idxs), self.char_emb(qc_idxs)  # batch_size x ques_limit x w_embed, batch_size x ques_limit x char_limit x c_embed
+
+        c_emb = self.emb(cw_emb, cc_emb)  # batch_size x para_limit x d_embed
+        q_emb = self.emb(qw_emb, qc_emb)  # batch_size x ques_limit x d_embed
+
+        c_conv = self.context_conv(c_emb)  # batch_size x d_model x para_limit
+        q_conv = self.question_conv(q_emb)  # batch_size x d_model x ques_limit
+
+        c_enc = self.c_emb_enc(c_conv, c_mask)  # batch_size x d_model x para_limit
+        q_enc = self.q_emb_enc(q_conv, q_mask)  # batch_size x d_model x ques_limit
+
+        x = self.cq_att(c_enc, q_enc, c_mask, q_mask)  # batch_size x (d_model * 4) x para_limit
+
+        m1 = self.cq_resizer(x)  # batch_size x d_model x para_limit
         for enc in self.model_enc_blks:
-            M1 = enc(M1, cmask)
-        M2 = M1
+            m1 = enc(m1, c_mask)
+        m2 = m1
         for enc in self.model_enc_blks:
-            M2 = enc(M2, cmask)
-        M3 = M2
+            m2 = enc(m2, c_mask)
+        m3 = m2
         for enc in self.model_enc_blks:
-            M3 = enc(M3, cmask)
-        p1, p2 = self.out(M1, M2, M3, cmask)  # batch_size x para_limit, batch_size x para_limit,
-        return p1, p2
+            m3 = enc(m3, c_mask)
+
+        x1 = torch.cat([m1, m2], dim = 1)
+        x2 = torch.cat([m1, m3], dim = 1)
+
+        logits_start = self.linear_start(x1.permute(0, 2, 1))  # batch_size x para_limit
+        logits_end = self.linear_end(x2.permute(0, 2, 1))  # batch_size x para_limit
+
+        from util import masked_softmax
+        log_p1 = masked_softmax(logits_start.squeeze(), c_mask, log_softmax=True)
+        log_p2 = masked_softmax(logits_end.squeeze(), c_mask, log_softmax=True)
+
+        return log_p1, log_p2
 
 
 class CQAttention(nn.Module):
@@ -82,28 +103,4 @@ class CQAttention(nn.Module):
         out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2)
         out = F.dropout(out, p=self.dropout, training=self.training)
         return out.transpose(1, 2)
-
-
-class Pointer(nn.Module):
-    def __init__(self, d_model):
-        super(Pointer, self).__init__()
-        w1 = torch.empty(d_model * 2)
-        w2 = torch.empty(d_model * 2)
-        lim = 3 / (2 * d_model)
-        nn.init.uniform_(w1, -math.sqrt(lim), math.sqrt(lim))
-        nn.init.uniform_(w2, -math.sqrt(lim), math.sqrt(lim))
-        self.w1 = nn.Parameter(w1)
-        self.w2 = nn.Parameter(w2)
-
-    def forward(self, M1, M2, M3, mask):
-        X1 = torch.cat([M1, M2], dim=1)
-        X2 = torch.cat([M1, M3], dim=1)
-        Y1 = torch.matmul(self.w1, X1)
-        Y2 = torch.matmul(self.w2, X2)
-        Y1 = mask_logits(Y1, mask)
-        Y2 = mask_logits(Y2, mask)
-        p1 = F.log_softmax(Y1, dim=1)
-        p2 = F.log_softmax(Y2, dim=1)
-        return p1, p2
-
 

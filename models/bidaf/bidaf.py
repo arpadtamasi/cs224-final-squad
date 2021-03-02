@@ -66,6 +66,7 @@ class BiDAF(nn.Module):
             drop_prob=drop_prob
         )
 
+    # noinspection PyUnresolvedReferences
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs # (batch_size, c_len)
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs # (batch_size, q_len)
@@ -87,6 +88,10 @@ class BiDAF(nn.Module):
         mod = self.mod(att, c_len)  # (batch_size, c_len, 2 * hidden_size)
 
         log_p1, log_p2 = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+
+        p_span_start = torch.round(torch.exp(log_p1) * 100).int()
+        p_span_end = torch.round(torch.exp(log_p2) * 100).int()
+
         spans = list(zip(
             torch.argmax(log_p1, -1).tolist(),
             torch.argmax(log_p2, -1).tolist()

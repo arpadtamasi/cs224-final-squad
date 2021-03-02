@@ -22,12 +22,12 @@ from ujson import load as json_load
 import util
 from args import get_train_args
 from models import create_model
-from util import collate_fn, SQuAD
+from util import SQuAD
 
 
 def main(args):
     # Set up logging and devices
-    args.save_dir = util.get_save_dir(args.save_dir, args.name, training=True)
+    args.save_dir = util.get_save_dir(args.save_dir, args.name, args.dataset, training=True)
     log = util.get_logger(args.save_dir, args.name)
     tbx = SummaryWriter(args.save_dir)
     device, args.gpu_ids = util.get_available_devices()
@@ -43,8 +43,10 @@ def main(args):
 
     # Get embeddings
     log.info('Loading embeddings...')
-    word_vectors = util.torch_from_json(args.word_emb_file)
-    char_vectors = util.torch_from_json(args.char_emb_file)
+    word_emb_file = util.preprocessed_path(args.word_emb_file, args.data_dir, args.dataset)
+    char_emb_file = util.preprocessed_path(args.char_emb_file, args.data_dir, args.dataset)
+    word_vectors = util.torch_from_json(word_emb_file)
+    char_vectors = util.torch_from_json(char_emb_file)
 
     # Get model
     log.info(f'Building {args.name} model...')
@@ -78,18 +80,23 @@ def main(args):
 
     # Get data loader
     log.info('Building dataset...')
-    train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
+
+    collate_fn=None if args.name in ['qanet'] else util.collate_fn
+    train_record_file = util.preprocessed_path(args.train_record_file, args.data_dir, args.dataset)
+    train_dataset = SQuAD(train_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
-                                   shuffle=False, # TODO @rp True
+                                   shuffle=True,
                                    num_workers=args.num_workers,
-                                   collate_fn=None if args.name == 'qanet' else collate_fn)
-    dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)
+                                   collate_fn=collate_fn)
+
+    dev_record_file = util.preprocessed_path(args.dev_record_file, args.data_dir, args.dataset)
+    dev_dataset = SQuAD(dev_record_file, args.use_squad_v2)
     dev_loader = data.DataLoader(dev_dataset,
                                  batch_size=args.batch_size,
                                  shuffle=False,
                                  num_workers=args.num_workers,
-                                 collate_fn=None if args.name == 'qanet' else collate_fn)
+                                 collate_fn=collate_fn)
 
     # Train
     log.info('Training...')
@@ -116,7 +123,9 @@ def main(args):
                 log_p1, log_p2 = model(cw_idxs.to(device), cc_idxs.to(device), qw_idxs.to(device), qc_idxs.to(device))
 
                 y1, y2 = y1.to(device), y2.to(device)
-                loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
+                nll_loss_1 = F.nll_loss(log_p1, y1)
+                nll_loss_2 = F.nll_loss(log_p2, y2)
+                loss = nll_loss_1 + nll_loss_2
                 loss_val = loss.item()
 
                 # Backward
@@ -143,8 +152,9 @@ def main(args):
                     # Evaluate and save checkpoint
                     log.info(f'Evaluating at step {step}...')
                     ema.assign(model)
+                    dev_eval_file = util.preprocessed_path(args.dev_eval_file, args.data_dir, args.dataset)
                     results, pred_dict = evaluate(model, dev_loader, device,
-                                                  args.dev_eval_file,
+                                                  dev_eval_file,
                                                   args.max_ans_len,
                                                   args.use_squad_v2)
                     saver.save(step, model, results[args.metric_name], device)
@@ -158,9 +168,11 @@ def main(args):
                     log.info('Visualizing in TensorBoard...')
                     for k, v in results.items():
                         tbx.add_scalar(f'dev/{k}', v, step)
+
+                    dev_eval_file = util.preprocessed_path(args.dev_eval_file, args.data_dir, args.dataset)
                     util.visualize(tbx,
                                    pred_dict=pred_dict,
-                                   eval_path=args.dev_eval_file,
+                                   eval_path=dev_eval_file,
                                    step=step,
                                    split='dev',
                                    num_visuals=args.num_visuals)

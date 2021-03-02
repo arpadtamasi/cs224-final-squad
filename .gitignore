@@ -3,7 +3,6 @@
 __pycache__
 .texpadtmp/
 data/
-!data/*-v2.0.json
 save/
 .vscode/
 /cloud/

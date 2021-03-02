@@ -1,2 +1,2 @@
 def mask_logits(target, mask):
-    return target * (1 - mask) + mask * (-1e30)
+    return target * mask + (1 - mask) * (-1e30)

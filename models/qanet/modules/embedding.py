@@ -14,7 +14,7 @@ class Embedding(nn.Module):
         self.dropout = dropout
         self.dropout_char = dropout_char
 
-    def forward(self, ch_emb, wd_emb):
+    def forward(self, wd_emb, ch_emb):
         ch_emb = ch_emb.permute(0, 3, 1, 2)
         ch_emb = F.dropout(ch_emb, p=self.dropout_char, training=self.training)
         ch_emb = self.conv2d(ch_emb)

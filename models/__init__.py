@@ -14,6 +14,7 @@ def create_model(
 
         d_model = 96
         num_heads = 8
+        drop_prob = 0.
         dropout_char = 0.05
         freeze_char_embedding = False
         para_limit = 400
@@ -21,7 +22,6 @@ def create_model(
 
         return QANet(
             word_mat=word_vectors, char_mat=char_vectors,
-            d_word=word_vectors.shape[-1], d_char=char_vectors.shape[-1],
             d_model=d_model, n_head=num_heads,
             len_c=para_limit + 1, len_q=ques_limit + 1,
             dropout=drop_prob, dropout_char=dropout_char,
