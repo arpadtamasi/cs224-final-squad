@@ -12,26 +12,26 @@ Author:
 """
 
 import csv
+from collections import OrderedDict
+from json import dumps
+from os.path import join
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as data
-import util
-
-from args import get_test_args
-from collections import OrderedDict
-from json import dumps
-from models import create_model
-from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-from ujson import load as json_load
+
+import util
+from args import get_test_args
+from models import create_model
 from util import collate_fn, SQuAD
 
 
 def main(args):
     # Set up logging
-    args.save_dir = util.get_save_dir(args.save_dir, args.name, training=False)
+    args.save_dir = util.get_save_dir(args.save_dir, args.name, mode="test")
     log = util.get_logger(args.save_dir, args.name)
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
     device, gpu_ids = util.get_available_devices()
@@ -66,8 +66,7 @@ def main(args):
     pred_dict = {}  # Predictions for TensorBoard
     sub_dict = {}   # Predictions for submission
     eval_file = vars(args)[f'{args.split}_eval_file']
-    with open(eval_file, 'r') as fh:
-        gold_dict = json_load(fh)
+    gold_dict = util.load_eval_file(args, args.eval_file)
     with torch.no_grad(), \
             tqdm(total=len(dataset)) as progress_bar:
         for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in data_loader:
@@ -118,7 +117,7 @@ def main(args):
         tbx = SummaryWriter(args.save_dir)
         util.visualize(tbx,
                        pred_dict=pred_dict,
-                       eval_path=eval_file,
+                       eval_dict=gold_dict,
                        step=0,
                        split=args.split,
                        num_visuals=args.num_visuals)

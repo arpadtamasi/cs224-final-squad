@@ -56,13 +56,13 @@ class SQuAD(data.Dataset):
         if use_v2:
             # SQuAD 2.0: Use index 0 for no-answer token (token 1 = OOV)
             batch_size, c_len, w_len = self.context_char_idxs.size()
-            ones = torch.ones((batch_size, 1), dtype=torch.int64)
-            self.context_idxs = torch.cat((ones, self.context_idxs), dim=1)
-            self.question_idxs = torch.cat((ones, self.question_idxs), dim=1)
+            twos = torch.ones((batch_size, 1), dtype=torch.int64) * 2
+            self.context_idxs = torch.cat((twos, self.context_idxs), dim=1)
+            self.question_idxs = torch.cat((twos, self.question_idxs), dim=1)
 
-            ones = torch.ones((batch_size, 1, w_len), dtype=torch.int64)
-            self.context_char_idxs = torch.cat((ones, self.context_char_idxs), dim=1)
-            self.question_char_idxs = torch.cat((ones, self.question_char_idxs), dim=1)
+            twos = torch.ones((batch_size, 1, w_len), dtype=torch.int64) * 2
+            self.context_char_idxs = torch.cat((twos, self.context_char_idxs), dim=1)
+            self.question_char_idxs = torch.cat((twos, self.question_char_idxs), dim=1)
 
             self.y1s += 1
             self.y2s += 1
@@ -74,13 +74,15 @@ class SQuAD(data.Dataset):
 
     def __getitem__(self, idx):
         idx = self.valid_idxs[idx]
-        example = (self.context_idxs[idx],
-                   self.context_char_idxs[idx],
-                   self.question_idxs[idx],
-                   self.question_char_idxs[idx],
-                   self.y1s[idx],
-                   self.y2s[idx],
-                   self.ids[idx])
+        example = (
+            self.context_idxs[idx],
+            self.context_char_idxs[idx],
+            self.question_idxs[idx],
+            self.question_char_idxs[idx],
+            self.y1s[idx],
+            self.y2s[idx],
+            self.ids[idx]
+        )
 
         return example
 
@@ -172,6 +174,30 @@ class AverageMeter:
         self.count += num_samples
         self.sum += val * num_samples
         self.avg = self.sum / self.count
+
+
+class MultiAverageMeter:
+    def __init__(self, names):
+        self.__meters = {
+            name: AverageMeter()
+            for name in names
+        }
+
+        self.__count = 0
+
+    def update(self, values, steps=1):
+        for k, v in values.items():
+            self.__meters[k].update(v, steps)
+        self.__count += 1
+
+    @property
+    def avg(self): return {k: v.avg for k, v in self.__meters.items()}
+
+    @property
+    def sum(self): return {k: v.sum for k, v in self.__meters.items()}
+
+    @property
+    def count(self): return {k: v.count for k, v in self.__meters.items()}
 
 
 class EMA:
@@ -391,7 +417,13 @@ def masked_softmax(logits, mask, dim=-1, log_softmax=False):
     return probs
 
 
-def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
+def load_eval_file(args, eval_file):
+    with open(preprocessed_path(eval_file, args.data_dir, args.dataset), 'r') as fh:
+        from ujson import load as json_load
+        return json_load(fh)
+
+
+def visualize(tbx, pred_dict, eval_dict, step, split, num_visuals):
     """Visualize text examples to TensorBoard.
 
     Args:
@@ -409,8 +441,6 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
 
     visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)
 
-    with open(eval_path, 'r') as eval_file:
-        eval_dict = json.load(eval_file)
     for i, id_ in enumerate(visual_ids):
         pred = pred_dict[id_] or 'N/A'
         example = eval_dict[str(id_)]
@@ -466,7 +496,7 @@ def preprocessed_path(filename, data_dir, dataset):
     return os.path.join(data_dir, dataset, filename)
 
 
-def get_save_dir(base_dir, name, dataset, training, id_max=100):
+def get_save_dir(base_dir, name, dataset, mode, id_max=100):
     """Get a unique save directory by appending the smallest positive integer
     `id < id_max` that is not already taken (i.e., no dir exists with that id).
 
@@ -480,8 +510,7 @@ def get_save_dir(base_dir, name, dataset, training, id_max=100):
         save_dir (str): Path to a new directory with a unique name.
     """
     for uid in range(1, id_max):
-        subdir = 'train' if training else 'test'
-        save_dir = os.path.join(base_dir, subdir, dataset, f'{name}-{uid:02d}')
+        save_dir = os.path.join(base_dir, mode, dataset, f'{name}-{uid:02d}')
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
             return save_dir
@@ -741,3 +770,13 @@ def compute_f1(a_gold, a_pred):
     recall = 1.0 * num_same / len(gold_toks)
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
+
+
+def millify(n):
+    import math
+    millnames = ['', 'k', 'M', 'B', 'T']
+
+    n = float(n)
+    millidx = max(0, min(len(millnames) - 1, int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
+
+    return f'{n / 10 ** (3 * millidx):.2f}{millnames[millidx]}'

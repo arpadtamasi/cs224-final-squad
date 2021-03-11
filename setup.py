@@ -46,9 +46,6 @@ def download_url(url, output_path, show_progress=True):
         urllib.request.urlretrieve(url, output_path)
 
 
-
-
-
 def download(args):
     downloads = [
         # Can add other downloads here (e.g., other word vectors)
@@ -167,17 +164,19 @@ def get_embedding(counter, data_type, limit=-1, emb_file=None, vec_size=None, nu
     else:
         assert vec_size is not None
         for token in filtered_elements:
-            embedding_dict[token] = [np.random.normal(
-                scale=0.1) for _ in range(vec_size)]
+            embedding_dict[token] = [np.random.normal(scale=0.1) for _ in range(vec_size)]
         print(f"{len(filtered_elements)} tokens have corresponding {data_type} embedding vector")
 
     NULL = "--NULL--"
     OOV = "--OOV--"
-    token2idx_dict = {token: idx for idx, token in enumerate(embedding_dict.keys(), 2)}
+    NOANSWER = "--NOANSWER--"
+    token2idx_dict = {token: idx for idx, token in enumerate(embedding_dict.keys(), 3)}
     token2idx_dict[NULL] = 0
     token2idx_dict[OOV] = 1
-    embedding_dict[NULL] = [0. for _ in range(vec_size)]
-    embedding_dict[OOV] = [0. for _ in range(vec_size)]
+    token2idx_dict[NOANSWER] = 2
+    embedding_dict[NULL] = [np.random.normal(scale=0.1) for _ in range(vec_size)]
+    embedding_dict[OOV] = [np.random.normal(scale=0.1) for _ in range(vec_size)]
+    embedding_dict[NOANSWER] = [np.random.normal(scale=0.1) for _ in range(vec_size)]
     idx2emb_dict = {idx: embedding_dict[token]
                     for token, idx in token2idx_dict.items()}
     emb_mat = [idx2emb_dict[idx] for idx in range(len(idx2emb_dict))]

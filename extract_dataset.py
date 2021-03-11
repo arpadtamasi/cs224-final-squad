@@ -3,7 +3,8 @@ import json
 
 def extract_samples(source, words, no_answer, max_topics, max_paragraphs, max_qas):
     def filter_topic(topic):
-        return any(w in topic['title'] for w in words) if words else True
+        title = topic['title']
+        return any(w in title for w in words) if words else True
 
     def filter_qa(qa):
         if no_answer is None:
@@ -37,10 +38,10 @@ def extract_samples(source, words, no_answer, max_topics, max_paragraphs, max_qa
 
     def transform_topics(topics):
         return [
-            transform_topic(topic)
-            for topic in topics
-            if filter_topic(topic)
-        ][:max_topics]
+                   transform_topic(topic)
+                   for topic in topics
+                   if filter_topic(topic)
+               ][:max_topics]
 
     return {
         'version': source['version'],
@@ -91,13 +92,13 @@ def list_topics(data_type):
             print(t['title'])
 
 
-# export_extracted_samples('train', 'small',words=['Zelda', 'Hydrogen', 'Brain', 'Comput'], no_answer=True)
+# export_extracted_samples('train', 'small',words=['Zelda', 'Hydrogen', 'Brain', 'Computer'], no_answer=True)
 # export_extracted_samples('dev', 'small', words=['Comput', 'Steam', 'Force'], no_answer=True)
 # export_extracted_samples('test', 'small',words=['Oxygen', 'Prime', 'Geology', 'Miscellaneous'], no_answer=True)
 
-# export_extracted_samples('train', 'small-answered', words=['Zelda', 'Hydrogen', 'Brain', 'Comput'], no_answer=False)
-# export_extracted_samples('dev', 'small-answered', words=['Comput', 'Steam', 'Force'], no_answer=False)
-# export_extracted_samples('test', 'small-answered', words=['Oxygen', 'Prime', 'Geology', 'Miscellaneous'], no_answer=False)
+export_extracted_samples('train', 'small-answered', words=['Zelda', 'Hydrogen', 'Brain', 'Comput'], no_answer=False)
+export_extracted_samples('dev', 'small-answered', words=['Comput', 'Steam', 'Force'], no_answer=False)
+export_extracted_samples('test', 'small-answered', words=['Oxygen', 'Prime', 'Geology', 'Miscellaneous'], no_answer=False)
 
 # export_extracted_samples('train', 'tiny', words=['Comput'], no_answer=None)
 # export_extracted_samples('dev', 'tiny', words=['Comput'], no_answer=None)
@@ -107,10 +108,30 @@ def list_topics(data_type):
 # export_extracted_samples('dev', 'tiny-answered', words=['Comput'], no_answer=False)
 # export_extracted_samples('test', 'tiny-answered', words=['Miscellaneous'], no_answer=False)
 
-export_extracted_samples('train', 'debug-81', words=['Computer'], no_answer=False, target_data_type='train', max_topics=1, max_paragraphs=8, max_qas=1)
-export_extracted_samples('train', 'debug-81', words=['Computer'], no_answer=False, target_data_type='dev', max_topics=1, max_paragraphs=8, max_qas=1)
-export_extracted_samples('train', 'debug-81', words=['Computer'], no_answer=False, target_data_type='test', max_topics=1, max_paragraphs=8, max_qas=1)
+# export_extracted_samples('train', 'debug-81', words=['Computer'], no_answer=False, target_data_type='train', max_topics=1, max_paragraphs=8, max_qas=1)
+# export_extracted_samples('train', 'debug-81', words=['Computer'], no_answer=False, target_data_type='dev', max_topics=1, max_paragraphs=8, max_qas=1)
+# export_extracted_samples('train', 'debug-81', words=['Computer'], no_answer=False, target_data_type='test', max_topics=1, max_paragraphs=8, max_qas=1)
+#
+# export_extracted_samples('train', 'debug-11', words=['Computer'], no_answer=False, target_data_type='train', max_topics=1, max_paragraphs=1, max_qas=1)
+# export_extracted_samples('train', 'debug-11', words=['Computer'], no_answer=False, target_data_type='dev', max_topics=1, max_paragraphs=1, max_qas=1)
+# export_extracted_samples('train', 'debug-11', words=['Computer'], no_answer=False, target_data_type='test', max_topics=1, max_paragraphs=1, max_qas=1)
 
-export_extracted_samples('train', 'debug-11', words=['Computer'], no_answer=False, target_data_type='train', max_topics=1, max_paragraphs=1, max_qas=1)
-export_extracted_samples('train', 'debug-11', words=['Computer'], no_answer=False, target_data_type='dev', max_topics=1, max_paragraphs=1, max_qas=1)
-export_extracted_samples('train', 'debug-11', words=['Computer'], no_answer=False, target_data_type='test', max_topics=1, max_paragraphs=1, max_qas=1)
+hyper_words = ['IPod', 'Solar energy', 'Genome', 'Institute_of_technology', 'Wayback_Machine', 'Lighting', 'Architecture', 'BBC_Television', 'Alexander_Graham_Bell',
+               'Internet_service_provider', 'Hydrogen', 'Space_Race', 'Daylight_saving_time', 'Gene', 'High-definition_television', 'Computer', 'Immunology', 'MP3', 'Copper',
+               'Communication', 'Computer_security', 'Aircraft_carrier', 'Federal_Aviation_Administration', 'Videoconferencing', 'Xbox_360', 'Infrared', 'Biodiversity', 'ASCII',
+               'Macintosh', 'General_Electric', 'Adolescence', 'Uranium', 'Circadian_rhythm', 'Dell', 'Asphalt', 'Memory']
+
+hyper_question_words = ['what']
+
+export_extracted_samples(
+    'train', 'hyper',
+    words=hyper_words,
+    no_answer=False, target_data_type='train')
+export_extracted_samples(
+    'train', 'hyper',
+    words=hyper_words,
+    no_answer=False, target_data_type='dev')
+export_extracted_samples(
+    'train', 'hyper',
+    words=hyper_words,
+    no_answer=False, target_data_type='test')

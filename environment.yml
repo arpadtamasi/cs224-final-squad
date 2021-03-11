@@ -17,3 +17,6 @@ dependencies:
   - pytorch=1.7.1
   - pip:
     - torch==1.7.1
+    - sklearn==0.0
+    - pandas==1.2.3
+
