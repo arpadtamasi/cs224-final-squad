@@ -28,7 +28,7 @@ class QANetConf:
     model_dim: int = 128
 
     context_len: int = 401
-    question_len: int = 50
+    question_len: int = 51
 
     embedding: EncoderBlockConf = EncoderBlockConf(
         kernel_size=7, layer_dropout=0.9,
