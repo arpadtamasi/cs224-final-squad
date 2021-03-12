@@ -28,10 +28,9 @@ from args import get_test_args
 from models import init_training
 from util import collate_fn, SQuAD
 
-
 def main(args):
     # Set up logging
-    args.save_dir = util.get_save_dir(args.save_dir, args.name, mode="test")
+    args.save_dir = util.get_save_dir(args.save_dir, args.name, args.dataset, mode="test")
     log = util.get_logger(args.save_dir, args.name)
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
     device, gpu_ids = util.get_available_devices()
@@ -43,7 +42,7 @@ def main(args):
 
     # Get model
     log.info(f'Building {args.name} model...')
-    model = init_training(args.name, word_vectors, args.hidden_size)
+    model = init_training(args.name, word_vectors, args.hidden_size, device)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)

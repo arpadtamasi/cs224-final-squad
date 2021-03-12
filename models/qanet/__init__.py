@@ -1,1 +1,1 @@
-from .qanet import QANet
+from .qanet import QANet, QANetConf

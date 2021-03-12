@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -10,28 +11,81 @@ from .modules.embedding import Embedding
 from .modules.functions import mask_logits
 
 
+@dataclass
+class EncoderBlockConf:
+    kernel_size: int
+    layer_dropout: float
+    num_heads: int
+    num_convs: int
+    num_blocks: int
+
+@dataclass
+class QANetConf:
+    aligned_query_embedding: bool = True
+    freeze_char_embedding: bool = False
+    dropout: float = 0.1
+    char_dropout: float = 0.05
+    model_dim: int = 128
+
+    context_len: int = 401
+    question_len: int = 50
+
+    embedding: EncoderBlockConf = EncoderBlockConf(
+        kernel_size=7, layer_dropout=0.9,
+        num_heads=8, num_convs=4, num_blocks=1
+    )
+    modeling: EncoderBlockConf = EncoderBlockConf(
+        kernel_size=5, layer_dropout=0.9,
+        num_heads=8, num_convs=2, num_blocks=7
+    )
+
 class QANet(nn.Module):
-    def __init__(self, word_vectors, char_vectors, d_model, n_head, len_c, len_q, dropout, dropout_char, freeze_char_embedding):
+    def __init__(self, word_vectors, char_vectors, config: QANetConf):
         super(QANet, self).__init__()
 
-        self.emb = Embedding(word_vectors, char_vectors, freeze_char_embedding, dropout, dropout_char)
+        self.emb = Embedding(word_vectors, char_vectors, config.freeze_char_embedding, config.dropout, config.char_dropout)
         d_embed = self.emb.d_embed
 
-        self.c_conv = DepthwiseSeparableConv(d_embed, d_model, 5)
-        self.q_conv = DepthwiseSeparableConv(d_embed, d_model, 5)
+        self.c_conv = DepthwiseSeparableConv(d_embed, config.model_dim, 5)
+        self.q_conv = DepthwiseSeparableConv(d_embed, config.model_dim, 5)
 
-        self.c_emb_enc = EncoderBlock(conv_num=4, ch_num=d_model, k=7, length=len_c, d_model=d_model, n_head=n_head, dropout=dropout)
-        self.q_emb_enc = EncoderBlock(conv_num=4, ch_num=d_model, k=7, length=len_q, d_model=d_model, n_head=n_head, dropout=dropout)
+        self.c_emb_enc = EncoderBlock(
+            conv_num=config.embedding.num_convs,
+            ch_num=config.model_dim,
+            k=config.embedding.kernel_size,
+            length=config.context_len,
+            d_model=config.model_dim,
+            n_head=config.embedding.num_heads,
+            dropout=config.dropout
+        )
+        self.q_emb_enc = EncoderBlock(
+            conv_num=config.embedding.num_convs,
+            ch_num=config.model_dim,
+            k=config.embedding.kernel_size,
+            length=config.question_len,
+            d_model=config.model_dim,
+            n_head=config.embedding.num_heads,
+            dropout=config.dropout
+        )
 
-        self.cq_att = CQAttention(d_model, dropout)
-        self.cq_resizer = DepthwiseSeparableConv(d_model * 4, d_model, 5)
-        enc_blk = EncoderBlock(conv_num=2, ch_num=d_model, k=5, length=len_c, d_model=d_model, n_head=n_head, dropout=dropout)
+        self.cq_att = CQAttention(config.model_dim, config.dropout)
+        self.cq_resizer = DepthwiseSeparableConv(config.model_dim * 4, config.model_dim, 5)
+
+        enc_blk = EncoderBlock(
+            conv_num=config.modeling.num_convs,
+            ch_num=config.model_dim,
+            k=config.modeling.kernel_size,
+            length=config.context_len,
+            d_model=config.model_dim,
+            n_head=config.modeling.num_heads,
+            dropout=config.dropout
+        )
         self.model_enc_blks = nn.ModuleList([enc_blk] * 7)
 
-        self.linear_start = nn.Linear(d_model * 2, 1)
-        self.linear_end = nn.Linear(d_model * 2, 1)
+        self.linear_start = nn.Linear(config.model_dim * 2, 1)
+        self.linear_end = nn.Linear(config.model_dim * 2, 1)
 
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(config.dropout)
 
     # noinspection PyUnresolvedReferences
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
@@ -61,9 +115,6 @@ class QANet(nn.Module):
 
         x1 = torch.cat([m1, m2], dim = 1)
         x2 = torch.cat([m1, m3], dim = 1)
-
-        # x1 = self.dropout(x1)
-        # x2 = self.dropout(x2)
 
         logits_start = self.linear_start(x1.permute(0, 2, 1))  # batch_size x para_limit
         logits_end = self.linear_end(x2.permute(0, 2, 1))  # batch_size x para_limit

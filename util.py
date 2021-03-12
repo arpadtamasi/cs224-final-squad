@@ -58,19 +58,21 @@ class SQuAD(data.Dataset):
             batch_size, c_len, w_len = self.context_char_idxs.size()
             twos = torch.ones((batch_size, 1), dtype=torch.int64) * 2
             self.context_idxs = torch.cat((twos, self.context_idxs), dim=1)
-            self.question_idxs = torch.cat((twos, self.question_idxs), dim=1)
+            # self.question_idxs = torch.cat((twos, self.question_idxs), dim=1)
 
             twos = torch.ones((batch_size, 1, w_len), dtype=torch.int64) * 2
             self.context_char_idxs = torch.cat((twos, self.context_char_idxs), dim=1)
-            self.question_char_idxs = torch.cat((twos, self.question_char_idxs), dim=1)
+            # self.question_char_idxs = torch.cat((twos, self.question_char_idxs), dim=1)
 
             self.y1s += 1
             self.y2s += 1
 
         # SQuAD 1.1: Ignore no-answer examples
         self.ids = torch.from_numpy(dataset['ids']).long()
-        self.valid_idxs = [idx for idx in range(len(self.ids))
-                           if use_v2 or self.y1s[idx].item() >= 0]
+        self.valid_idxs = [
+            idx for idx in range(len(self.ids))
+            if use_v2 or self.y1s[idx].item() >= 0
+        ]
 
     def __getitem__(self, idx):
         idx = self.valid_idxs[idx]

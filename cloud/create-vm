@@ -10,5 +10,5 @@ gcloud compute instances create $INSTANCE \
   --metadata="install-nvidia-driver=True" \
   --boot-disk-size 200GB
 
-gcloud compute --quiet disks resize $INSTANCE --size 200GB
+# gcloud compute --quiet disks resize $INSTANCE --size 200GB
 gcloud compute instances reset $INSTANCE

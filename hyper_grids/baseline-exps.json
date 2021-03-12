@@ -1,7 +1,0 @@
-{
-  "lr": [0.5],
-  "l2_wd": [0],
-  "drop_prob": [0.2],
-  "max_grad_norm": [5.0],
-  "lr_decay": [1]
-}

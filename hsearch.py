@@ -9,6 +9,7 @@ from tqdm import tqdm
 import train
 import util
 
+import helpers
 
 def load_training_data(args):
     return util.SQuAD(util.preprocessed_path(args.train_record_file, args.data_dir, args.dataset), args.use_squad_v2)
@@ -62,11 +63,10 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
 
         return loss, batch_size, preds
 
-    def run_experiment(tbx, train_loader, train_size, eval_loader, eval_size, gold_dict, x_args):
+    def run_experiment(tbx, train_loader, train_size, eval_loader, eval_size, gold_dict, config):
         from models import init_training
-        max_grad_norm = x_args.max_grad_norm
-        model, optimizer, scheduler, ema, step = init_training(args, word_vectors, char_vectors, device)
-
+        max_grad_norm = args.max_grad_norm
+        model, optimizer, scheduler, ema, step = init_training(args, word_vectors, char_vectors, device, config)
 
         prev_epoch_avg_nll = None
         for epoch in range(step, args.num_epochs):
@@ -133,27 +133,16 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
             }
         return results, pred_dict
 
-    def config_to_xargs(args, config):
-        arg_names = sorted(list(config.keys()))
-        experiment_path = [f'{n}={config[n]}' for n in arg_names]
-        import copy
-        x_args = copy.deepcopy(args)
-        for n in arg_names:
-            setattr(x_args, n, config[n])
 
-        print(config)
 
-        return experiment_path, x_args
-
-    def kfold_training_function(config):
-        experiment_path, x_args = config_to_xargs(args, config)
+    def kfold_training_function(experiment, config):
         avg_meter = util.MultiAverageMeter(['F1', 'EM', 'AvNA', 'NLL'])
         gold_dict = train_gold_dict
         for fold_index, train_loader, train_size, test_loader, test_size in kfold_generator(args, k_fold_spits, training_dataset):
-            save_dir = os.path.join(experiment_save_dir, *experiment_path, f"fold={fold_index + 1}")
+            save_dir = os.path.join(experiment_save_dir, *experiment, f"fold={fold_index + 1}")
             tbx = SummaryWriter(save_dir)
 
-            model, steps = run_experiment(tbx, train_loader, train_size, test_loader, test_size, gold_dict, x_args)
+            model, steps = run_experiment(tbx, train_loader, train_size, test_loader, test_size, gold_dict, config)
             results, _ = evaluate(model, test_loader, test_size, gold_dict)
             avg_meter.update(results, steps)
 
@@ -162,17 +151,16 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
             **avg_meter.avg
         }
 
-    def training_function(config):
-        experiment_path, x_args = config_to_xargs(args, config)
+    def training_function(experiment, config):
         import torch.utils.data as data
         train_loader = data.DataLoader(training_dataset, shuffle=True, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=None)
         eval_loader = data.DataLoader(eval_dataset, shuffle=False, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=None)
-        save_dir = os.path.join(experiment_save_dir, *experiment_path)
+        save_dir = os.path.join(experiment_save_dir, *experiment)
         tbx = SummaryWriter(save_dir)
 
         train_size = len(training_dataset)
         eval_size = len(eval_dataset)
-        model, steps = run_experiment(tbx, train_loader, train_size, eval_loader, eval_size, eval_gold_dict, x_args)
+        model, steps = run_experiment(tbx, train_loader, train_size, eval_loader, eval_size, eval_gold_dict, config)
         results, _ = evaluate(model, eval_loader, eval_size, eval_gold_dict)
 
         return {
@@ -182,39 +170,18 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
 
     return kfold_training_function if k_fold_spits is not None else training_function
 
-
-def hyperparam_space(config):
-    def generate(keys, acc):
-        if keys:
-            k, tail = keys[0], keys[1:]
-            values = config[k]
-            for v in values:
-                acc = acc.copy()
-                acc[k] = v
-                yield from generate(tail, acc)
-        else:
-            yield acc
-
-    yield from generate(list(config.keys()), {})
-
-
 def main(args):
-    import random
     import pandas as pd
-    import json
 
     experiment_save_dir = util.get_save_dir(
         args.save_dir, args.name, args.dataset, mode="hyper"
     )
     training_function = create_training_function(args, experiment_save_dir)
 
-    with open(args.hyper_grid_file, 'r') as pf: grid = json.load(pf)
-    all_experiments = list(hyperparam_space(grid))
-    experiment_configs = random.sample(all_experiments, min(len(all_experiments), args.max_experiments))
-
+    grid_search = helpers.GridSearch.load(args.experiments_file)
     results = [
-        training_function(config)
-        for config in experiment_configs
+        training_function(experiment, config)
+        for experiment, config in grid_search.random_experiments(args.max_experiments)
     ]
 
     df = pd.DataFrame(results)
@@ -227,3 +194,5 @@ if __name__ == '__main__':
     from args import get_hsearch_args
 
     main(get_hsearch_args())
+
+

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
 
@@ -6,41 +8,51 @@ from .modules import attention
 from .modules import conv
 from .modules import encoder
 from .modules import layer
-from performer_pytorch import SelfAttention
+
+
+@dataclass
+class EncoderBlockConf:
+    kernel_size: int
+    layer_dropout: float
+    num_heads: int
+    num_convs: int
+    num_blocks: int
+
+
+@dataclass
+class QANetConf:
+    aligned_query_embedding: bool = True
+    freeze_char_embedding: bool = False
+    dropout: float = 0.1
+    char_dropout: float = 0.05
+    model_dim: int = 128
+
+    embedding: EncoderBlockConf = EncoderBlockConf(
+        kernel_size=7, layer_dropout=0.9,
+        num_heads=8, num_convs=4, num_blocks=1
+    )
+    modeling: EncoderBlockConf = EncoderBlockConf(
+        kernel_size=5, layer_dropout=0.9,
+        num_heads=8, num_convs=2, num_blocks=7
+    )
 
 
 class QANet(nn.Module):
     def __init__(
             self,
             word_vectors, char_vectors,
-            aligned_query_embedding=True, freeze_char_embedding=False,
-            model_dim=128,
-            kernel_size_in_embedding=7,
-            num_head_in_embedding=8,
-            num_conv_block_in_embedding=1,
-            num_embedding_encoder_block=1,
-            kernel_size_in_modeling=5,
-            num_head_in_modeling=8,
-            num_conv_block_in_modeling=2,
-            num_modeling_encoder_block=7,
-            dropout=0.1, model_encoder_dropout=0.01,
-            layer_dropout=0.9,
-            char_dropout=0.05,
-            use_performer=False,
-            nb_performer_features=None
+            config: QANetConf
     ):
         super(QANet, self).__init__()
 
-        word_dropout = dropout
-        char_dropout = char_dropout
-        embed_encoder_dropout = dropout
-        embed_encoder_layer_dropout = layer_dropout
-        model_encoder_layer_dropout = layer_dropout
-        cq_dropout = dropout
+        if config.aligned_query_embedding:
+            emb = Embedding(
+                word_vectors, char_vectors,
+                config.freeze_char_embedding,
+                config.dropout, config.char_dropout
+            )
 
-        if aligned_query_embedding:
-            emb = Embedding(word_vectors, char_vectors, freeze_char_embedding, word_dropout, char_dropout)
-            embed_pointwise_conv = conv.PointwiseConv(emb.d_embed, model_dim)
+            embed_pointwise_conv = conv.PointwiseConv(emb.d_embed, config.model_dim)
 
             self.c_emb = emb
             self.q_emb = emb
@@ -49,49 +61,58 @@ class QANet(nn.Module):
             self.q_conv = embed_pointwise_conv
 
         else:
-            self.c_emb = Embedding(word_vectors, char_vectors, freeze_char_embedding, word_dropout, char_dropout)
-            self.q_emb = Embedding(word_vectors, char_vectors, freeze_char_embedding, word_dropout, char_dropout)
+            self.c_emb = Embedding(
+                word_vectors, char_vectors,
+                config.freeze_char_embedding,
+                config.dropout, config.char_dropout
+            )
+            self.q_emb = Embedding(
+                word_vectors, char_vectors,
+                config.freeze_char_embedding,
+                config.dropout, config.char_dropout
+            )
 
-            self.c_conv = conv.PointwiseConv(self.c_emb, model_dim)
-            self.q_conv = conv.PointwiseConv(self.q_emb, model_dim)
+            self.c_conv = conv.PointwiseConv(self.c_emb, config.model_dim)
+            self.q_conv = conv.PointwiseConv(self.q_emb, config.model_dim)
+
         self.embed_encoder_blocks = nn.ModuleList(
             [
                 EncoderBlock(
-                    model_dim=model_dim,
-                    kernel_size=kernel_size_in_embedding,
-                    num_head=num_head_in_embedding,
-                    num_conv_block=num_conv_block_in_embedding,
-                    dropout=embed_encoder_dropout,
-                    layer_dropout=embed_encoder_layer_dropout,
-                    use_performer=use_performer,
-                    nb_performer_features=nb_performer_features
+                    model_dim=config.model_dim,
+                    kernel_size=config.embedding.kernel_size,
+                    num_head=config.embedding.num_heads,
+                    num_conv_block=config.embedding.num_convs,
+                    dropout=config.dropout,
+                    layer_dropout=config.embedding.layer_dropout,
+                    use_performer=False,
+                    nb_performer_features=None
                 )
-                for _ in range(num_embedding_encoder_block)
+                for _ in range(config.embedding.num_blocks)
             ]
         )
 
-        self.co_attention = attention.CoAttention(model_dim)
-        self.pointwise_conv = conv.PointwiseConv(model_dim * 4, model_dim)
+        self.co_attention = attention.CoAttention(config.model_dim)
+        self.pointwise_conv = conv.PointwiseConv(config.model_dim * 4, config.model_dim)
 
         self.model_encoder_blocks = nn.ModuleList(
             [
                 EncoderBlock(
-                    model_dim=model_dim,
-                    kernel_size=kernel_size_in_modeling,
-                    num_head=num_head_in_modeling,
-                    num_conv_block=num_conv_block_in_modeling,
-                    dropout=model_encoder_dropout,
-                    layer_dropout=model_encoder_layer_dropout,
-                    use_performer=use_performer,
-                    nb_performer_features=nb_performer_features
+                    model_dim=config.model_dim,
+                    kernel_size=config.modeling.kernel_size,
+                    num_head=config.modeling.num_heads,
+                    num_conv_block=config.modeling.num_convs,
+                    dropout=config.dropout,
+                    layer_dropout=config.modeling.layer_dropout,
+                    use_performer=False,
+                    nb_performer_features=None
                 )
-                for _ in range(num_modeling_encoder_block)
+                for _ in range(config.modeling.num_blocks)
             ]
         )
 
-        self.pointer = Pointer(model_dim)
+        self.pointer = Pointer(config.model_dim)
 
-        self.cq_dropout = nn.Dropout(p=cq_dropout)
+        self.cq_dropout = nn.Dropout(p=config.dropout)
 
     # noinspection PyUnresolvedReferences
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
@@ -174,10 +195,11 @@ class EncoderBlock(nn.Module):
             [conv.DepSepConv(model_dim, model_dim, kernel_size) for _ in range(num_conv_block)]
         )
 
-        self.self_attention = (
-            SelfAttention(dim=model_dim, heads=num_head, dropout=dropout, causal=False, nb_features=nb_performer_features) if use_performer
-            else attention.MultiHeadAttention(num_head=num_head, model_dim=model_dim, dropout=dropout)
-        )
+        if use_performer:
+            from performer_pytorch import SelfAttention
+            self.self_attention = SelfAttention(dim=model_dim, heads=num_head, dropout=dropout, causal=False, nb_features=nb_performer_features)
+        else:
+            self.self_attention = attention.MultiHeadAttention(num_head=num_head, model_dim=model_dim, dropout=dropout)
 
         self.feedforward_layer = layer.PositionwiseFeedForward(
             model_dim, model_dim * 4, dropout=dropout
