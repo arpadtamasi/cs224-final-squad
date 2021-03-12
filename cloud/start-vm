@@ -1,0 +1,5 @@
+#!/bin/bash
+
+source "$(dirname $0)/variables"
+
+gcloud compute instances start rp-torch
