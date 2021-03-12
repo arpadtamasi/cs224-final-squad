@@ -13,7 +13,7 @@ def init_training(args, word_vectors, char_vectors, device, config=None):
     config = config or {}
     model_name = args.name
     if model_name == 'baseline':
-        model, optimizer, scheduler = init_baseline_training(args, word_vectors)
+        model, optimizer, scheduler = init_baseline_training(args, word_vectors, config)
     else:
         if model_name == 'claf':
             model, optimizer, scheduler = init_claf_training(args, char_vectors, word_vectors, config)
@@ -36,14 +36,27 @@ def init_training(args, word_vectors, char_vectors, device, config=None):
     return model, optimizer, scheduler, ema, step
 
 
-def init_baseline_training(args, word_vectors):
+def init_baseline_training(args, word_vectors, config):
     from models.bidaf import BiDAF
+
+    model_config = config.get('model', {})
+    bidaf_conf: BiDAFConf = load_dataclass(model_config, BiDAFConf)
+
     model = BiDAF(
-        word_vectors=word_vectors, hidden_size=args.hidden_size, drop_prob=args.drop_prob
+        word_vectors=word_vectors, hidden_size=bidaf_conf.hidden_size, drop_prob=bidaf_conf.drop_prob
     )
 
-    optimizer = optim.Adadelta(model.parameters(), args.lr, weight_decay=args.l2_wd)
-    scheduler = sched.LambdaLR(optimizer, lambda batch: args.lr_decay ** ((batch * args.batch_size) // 1000))
+    optimizer_config = config.get('optimizer', {})
+    adadelta_config = load_dataclass(optimizer_config, AdadeltaConf)
+    optimizer = optim.Adadelta(
+        model.parameters(),
+        lr=adadelta_config.learning_rate,
+        weight_decay=adadelta_config.weight_decay
+    )
+
+    scheduler_config = config.get('scheduler', {})
+    multiplicative_scheduler_config: MultiplicativeSchedulerConf = load_dataclass(scheduler_config, MultiplicativeSchedulerConf)
+    scheduler = sched.LambdaLR(optimizer, lambda batch: multiplicative_scheduler_config.multiplier ** ((batch * args.batch_size) // 1000))
 
     return model, optimizer, scheduler
 
@@ -115,3 +128,22 @@ class AdamConf:
 @dataclass
 class WarmupSchedulerConf:
     warmup_steps: int = 1000
+
+@dataclass
+class BiDAFConf:
+    hidden_size: int = 100
+    drop_prob: float = 0.
+
+@dataclass
+class AdadeltaConf:
+    learning_rate: float = 0.2
+    weight_decay: float = 0.
+
+@dataclass
+class AdadeltaConf:
+    learning_rate: float = 0.2
+    weight_decay: float = 0.
+
+@dataclass
+class MultiplicativeSchedulerConf:
+    multiplier: float = 1.

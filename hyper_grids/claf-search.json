@@ -3,19 +3,19 @@
     "aligned_query_embedding": true,
     "freeze_char_embedding": false,
     "dropout": [0.1, 0.2, 0.3],
-    "char_dropout": [0.05, 0.1],
+    "char_dropout": [0.05],
     "model_dim": 128,
     "embedding": {
       "kernel_size": 7,
       "layer_dropout": 0.9,
-      "num_heads": [1, 2, 4, 8],
+      "num_heads": [1, 2, 4],
       "num_convs": 4,
       "num_blocks": 1
     },
     "modeling": {
       "kernel_size": 5,
       "layer_dropout": 0.9,
-      "num_heads": [1, 2, 4, 8],
+      "num_heads": [4],
       "num_convs": 2,
       "num_blocks": 7
     }
