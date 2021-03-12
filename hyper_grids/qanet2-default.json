@@ -1,27 +1,29 @@
 {
   "model": {
-    "aligned_query_embedding": true,
     "freeze_char_embedding": false,
     "dropout": 0.1,
     "char_dropout": 0.05,
     "model_dim": 128,
+    "context_len": 401,
+    "question_len": 51,
     "embedding": {
       "kernel_size": 7,
-      "layer_dropout": 0.9,
       "dropout": 0.1,
+      "layer_dropout": 0.9,
       "num_heads": 8,
       "num_convs": 4,
       "num_blocks": 1
     },
     "modeling": {
       "kernel_size": 5,
-      "layer_dropout": 0.9,
       "dropout": 0.1,
+      "layer_dropout": 0.9,
       "num_heads": 8,
       "num_convs": 2,
       "num_blocks": 7
     }
-  },
+  }
+,
   "optimizer": {
     "beta_1": 0.8,
     "beta_2": 0.999,

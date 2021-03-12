@@ -1,12 +1,11 @@
 {
   "model": {
-    "aligned_query_embedding": true,
     "freeze_char_embedding": false,
     "dropout": 0.1,
     "char_dropout": 0.05,
     "model_dim": 128,
     "context_len": 401,
-    "question_len": 50,
+    "question_len": 51,
     "embedding": {
       "kernel_size": 7,
       "layer_dropout": 0.9,

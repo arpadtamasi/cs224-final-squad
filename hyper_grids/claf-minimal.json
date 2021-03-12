@@ -1,25 +1,25 @@
 {
   "model": {
-    "aligned_query_embedding": true,
+    "aligned_query_embedding": false,
     "freeze_char_embedding": false,
     "dropout": 0.1,
     "char_dropout": 0.05,
     "model_dim": 128,
     "embedding": {
-      "kernel_size": 7,
-      "layer_dropout": 0.9,
+      "kernel_size": 5,
+      "layer_dropout": 0,
       "dropout": 0.1,
-      "num_heads": 8,
-      "num_convs": 4,
+      "num_heads": 1,
+      "num_convs": 1,
       "num_blocks": 1
     },
     "modeling": {
       "kernel_size": 5,
-      "layer_dropout": 0.9,
+      "layer_dropout": 0,
       "dropout": 0.1,
-      "num_heads": 8,
-      "num_convs": 2,
-      "num_blocks": 7
+      "num_heads": 1,
+      "num_convs": 1,
+      "num_blocks": 1
     }
   },
   "optimizer": {

@@ -8,4 +8,5 @@ tmux send-keys -t $window 'cd squad' C-m
 tmux send-keys -t $window 'conda env create -f environment.yml' C-m
 tmux send-keys -t $window 'pip install performer-pytorch' C-m
 tmux send-keys -t $window 'gsutil -m cp -r gs://rollbar-dev-intelligence/tmp/squad/save/train/* save/train/squad' C-m
+tmux send-keys -t $window 'gsutil -m cp -r gs://rollbar-dev-intelligence/tmp/squad/data ./data' C-m
 tmux attach-session -t $session

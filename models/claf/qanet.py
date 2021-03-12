@@ -14,6 +14,7 @@ from .modules import layer
 class EncoderBlockConf:
     kernel_size: int
     layer_dropout: float
+    dropout: float
     num_heads: int
     num_convs: int
     num_blocks: int
@@ -21,18 +22,18 @@ class EncoderBlockConf:
 
 @dataclass
 class QANetConf:
-    aligned_query_embedding: bool = True
+    aligned_query_embedding: bool = False
     freeze_char_embedding: bool = False
     dropout: float = 0.1
     char_dropout: float = 0.05
     model_dim: int = 128
 
     embedding: EncoderBlockConf = EncoderBlockConf(
-        kernel_size=7, layer_dropout=0.9,
+        kernel_size=7, layer_dropout=0.9, dropout=0.1,
         num_heads=8, num_convs=4, num_blocks=1
     )
     modeling: EncoderBlockConf = EncoderBlockConf(
-        kernel_size=5, layer_dropout=0.9,
+        kernel_size=5, layer_dropout=0.9, dropout=0.1,
         num_heads=8, num_convs=2, num_blocks=7
     )
 
@@ -82,7 +83,7 @@ class QANet(nn.Module):
                     kernel_size=config.embedding.kernel_size,
                     num_head=config.embedding.num_heads,
                     num_conv_block=config.embedding.num_convs,
-                    dropout=config.dropout,
+                    dropout=config.embedding.dropout,
                     layer_dropout=config.embedding.layer_dropout,
                     use_performer=False,
                     nb_performer_features=None
@@ -101,7 +102,7 @@ class QANet(nn.Module):
                     kernel_size=config.modeling.kernel_size,
                     num_head=config.modeling.num_heads,
                     num_conv_block=config.modeling.num_convs,
-                    dropout=config.dropout,
+                    dropout=config.modeling.dropout,
                     layer_dropout=config.modeling.layer_dropout,
                     use_performer=False,
                     nb_performer_features=None

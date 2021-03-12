@@ -48,8 +48,8 @@ def main(args):
     # Get model
     log.info(f'Building {args.name} model...')
     config = None
-    if args.model_config_file:
-        with open(args.model_config_file, 'r') as pf: config = json_load(pf)
+    if args.config_file:
+        with open(args.config_file, 'r') as pf: config = json_load(pf)
         log.info(f"Model config: {dumps(config, indent=4, sort_keys=True)}")
     model, optimizer, scheduler, ema, step = init_training(args, *(load_embeddings(args)), device, config=config)
 

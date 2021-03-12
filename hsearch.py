@@ -9,7 +9,7 @@ from tqdm import tqdm
 import train
 import util
 
-import helpers
+from helpers import GridSearch
 
 def load_training_data(args):
     return util.SQuAD(util.preprocessed_path(args.train_record_file, args.data_dir, args.dataset), args.use_squad_v2)
@@ -139,7 +139,7 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
         avg_meter = util.MultiAverageMeter(['F1', 'EM', 'AvNA', 'NLL'])
         gold_dict = train_gold_dict
         for fold_index, train_loader, train_size, test_loader, test_size in kfold_generator(args, k_fold_spits, training_dataset):
-            save_dir = os.path.join(experiment_save_dir, *experiment, f"fold={fold_index + 1}")
+            save_dir = os.path.join(experiment_save_dir, *GridSearch.experiment_path(experiment), f"fold={fold_index + 1}")
             tbx = SummaryWriter(save_dir)
 
             model, steps = run_experiment(tbx, train_loader, train_size, test_loader, test_size, gold_dict, config)
@@ -147,7 +147,7 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
             avg_meter.update(results, steps)
 
         return {
-            **config,
+            **experiment,
             **avg_meter.avg
         }
 
@@ -155,7 +155,7 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
         import torch.utils.data as data
         train_loader = data.DataLoader(training_dataset, shuffle=True, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=None)
         eval_loader = data.DataLoader(eval_dataset, shuffle=False, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=None)
-        save_dir = os.path.join(experiment_save_dir, *experiment)
+        save_dir = os.path.join(experiment_save_dir, *GridSearch.experiment_path(experiment))
         tbx = SummaryWriter(save_dir)
 
         train_size = len(training_dataset)
@@ -164,7 +164,7 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
         results, _ = evaluate(model, eval_loader, eval_size, eval_gold_dict)
 
         return {
-            **config,
+            **experiment,
             **results
         }
 
@@ -178,7 +178,7 @@ def main(args):
     )
     training_function = create_training_function(args, experiment_save_dir)
 
-    grid_search = helpers.GridSearch.load(args.experiments_file)
+    grid_search = GridSearch.load(args.experiments_file)
     results = [
         training_function(experiment, config)
         for experiment, config in grid_search.random_experiments(args.max_experiments)

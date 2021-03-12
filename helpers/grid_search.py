@@ -52,9 +52,10 @@ class GridSearch:
             parent = reduce(operator.getitem, parent_path, config)
             assert key in parent and isinstance(parent[key], list)
             parent[key] = value
-        return (self.__experiment_path(arguments), config)
+        return (arguments, config)
 
-    def __experiment_path(self, arguments):
-        return [f'{n}={arguments[n]}' for n in (sorted(list(arguments.keys())))]
+    @staticmethod
+    def experiment_path(experiment):
+        return [f'{n}={experiment[n]}' for n in (sorted(list(experiment.keys())))]
 
 

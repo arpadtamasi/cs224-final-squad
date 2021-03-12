@@ -299,7 +299,7 @@ def add_train_args(parser):
                         type=float,
                         default=0.999,
                         help='Decay rate for exponential moving average of parameters.')
-    parser.add_argument('--model_config_file',
+    parser.add_argument('--config_file',
                         type=str,
                         default=None,
-                        help='Model config file')
+                        help='Training config file')
