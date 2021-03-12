@@ -12,8 +12,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -21,7 +19,7 @@ from ujson import load as json_load
 
 import util
 from args import get_train_args
-from models import create_model
+from models import init_training
 from util import SQuAD
 
 
@@ -41,27 +39,15 @@ def main(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    # Get embeddings
-    log.info('Loading embeddings...')
-    word_vectors, char_vectors = load_embeddings(args)
+    # Get data loader
+    log.info('Building dataset...')
+    collate_fn = None if args.name in ['qanet'] else util.collate_fn
+    train_loader, train_size, dev_loader, dev_size = build_datasets(args, collate_fn)
+    dev_eval_dict = util.load_eval_file(args, args.dev_eval_file)
 
     # Get model
     log.info(f'Building {args.name} model...')
-    model = create_model(
-        args.name,
-        hidden_size=args.hidden_size,
-        word_vectors=word_vectors, char_vectors=char_vectors,
-        drop_prob=args.drop_prob, layer_drop_prob=args.layer_drop_prob
-    )
-    model = nn.DataParallel(model, args.gpu_ids)
-    if args.load_path:
-        log.info(f'Loading checkpoint from {args.load_path}...')
-        model, step = util.load_model(model, args.load_path, args.gpu_ids)
-    else:
-        step = 0
-    model = model.to(device)
-    model.train()
-    ema = util.EMA(model, args.ema_decay)
+    model, optimizer, scheduler, ema, step = init_training(args, *(load_embeddings(args)), device)
 
     # Get saver
     saver = util.CheckpointSaver(args.save_dir,
@@ -70,18 +56,6 @@ def main(args):
                                  maximize_metric=args.maximize_metric,
                                  log=log)
 
-    # Get data loader
-    log.info('Building dataset...')
-
-    collate_fn = None if args.name in ['qanet'] else util.collate_fn
-    train_loader, train_size, dev_loader, dev_size = build_datasets(args, collate_fn)
-    dev_eval_dict = util.load_eval_file(args, args.dev_eval_file)
-
-    # Get optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), args.lr, weight_decay=args.l2_wd)
-    scheduler = sched.LambdaLR(optimizer, lambda batch: args.lr_decay ** ((batch * args.batch_size) // 1000))
-
-
     # Train
     log.info('Training...')
     steps_till_eval = args.eval_steps
@@ -89,8 +63,7 @@ def main(args):
     while epoch != args.num_epochs:
         epoch += 1
         log.info(f'Starting epoch {epoch}...')
-        with torch.enable_grad(), \
-                tqdm(total=train_size) as progress_bar:
+        with torch.enable_grad(), tqdm(total=train_size) as progress_bar:
             for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
@@ -160,7 +133,6 @@ def main(args):
                                    step=step,
                                    split='dev',
                                    num_visuals=args.num_visuals)
-
 
 
 def build_datasets(args, collate_fn=None):

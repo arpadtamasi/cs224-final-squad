@@ -40,14 +40,6 @@ def get_setup_args():
     parser.add_argument('--answer_file',
                         type=str,
                         default='answer.json')
-    parser.add_argument('--para_limit',
-                        type=int,
-                        default=400,
-                        help='Max number of words in a paragraph')
-    parser.add_argument('--ques_limit',
-                        type=int,
-                        default=50,
-                        help='Max number of words to keep from a question')
     parser.add_argument('--test_para_limit',
                         type=int,
                         default=1000,
@@ -203,7 +195,14 @@ def add_common_args(parser):
     parser.add_argument('--test_eval_file',
                         type=str,
                         default='test_eval.json')
-
+    parser.add_argument('--para_limit',
+                        type=int,
+                        default=400,
+                        help='Max number of words in a paragraph')
+    parser.add_argument('--ques_limit',
+                        type=int,
+                        default=50,
+                        help='Max number of words to keep from a question')
 
 def add_train_test_args(parser):
     """Add arguments common to train.py and test.py"""
@@ -271,6 +270,10 @@ def add_train_args(parser):
                         type=float,
                         default=0.2,
                         help='Probability of zeroing an activation in dropout layers.')
+    parser.add_argument('--me_drop_prob',
+                        type=float,
+                        default=0.2,
+                        help='Probability of zeroing an activation in model encoder dropout layers in QANet.')
     parser.add_argument('--layer_drop_prob',
                         type=float,
                         default=0.9,

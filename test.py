@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 import util
 from args import get_test_args
-from models import create_model
+from models import init_training
 from util import collate_fn, SQuAD
 
 
@@ -43,7 +43,7 @@ def main(args):
 
     # Get model
     log.info(f'Building {args.name} model...')
-    model = create_model(args.name, word_vectors, args.hidden_size)
+    model = init_training(args.name, word_vectors, args.hidden_size)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)

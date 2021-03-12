@@ -6,6 +6,7 @@ from .modules import attention
 from .modules import conv
 from .modules import encoder
 from .modules import layer
+from performer_pytorch import SelfAttention
 
 
 class QANet(nn.Module):
@@ -16,15 +17,17 @@ class QANet(nn.Module):
             model_dim=128,
             kernel_size_in_embedding=7,
             num_head_in_embedding=8,
-            num_conv_block_in_embedding=2,
+            num_conv_block_in_embedding=1,
             num_embedding_encoder_block=1,
             kernel_size_in_modeling=5,
             num_head_in_modeling=8,
             num_conv_block_in_modeling=2,
             num_modeling_encoder_block=7,
-            dropout=0.1,
+            dropout=0.1, model_encoder_dropout=0.01,
             layer_dropout=0.9,
-            char_dropout=0.05
+            char_dropout=0.05,
+            use_performer=False,
+            nb_performer_features=None
     ):
         super(QANet, self).__init__()
 
@@ -32,7 +35,6 @@ class QANet(nn.Module):
         char_dropout = char_dropout
         embed_encoder_dropout = dropout
         embed_encoder_layer_dropout = layer_dropout
-        model_encoder_dropout = 0
         model_encoder_layer_dropout = layer_dropout
         cq_dropout = dropout
 
@@ -58,9 +60,11 @@ class QANet(nn.Module):
                     model_dim=model_dim,
                     kernel_size=kernel_size_in_embedding,
                     num_head=num_head_in_embedding,
-                    num_conv_block=num_conv_block_in_modeling,
+                    num_conv_block=num_conv_block_in_embedding,
                     dropout=embed_encoder_dropout,
                     layer_dropout=embed_encoder_layer_dropout,
+                    use_performer=use_performer,
+                    nb_performer_features=nb_performer_features
                 )
                 for _ in range(num_embedding_encoder_block)
             ]
@@ -78,6 +82,8 @@ class QANet(nn.Module):
                     num_conv_block=num_conv_block_in_modeling,
                     dropout=model_encoder_dropout,
                     layer_dropout=model_encoder_layer_dropout,
+                    use_performer=use_performer,
+                    nb_performer_features=nb_performer_features
                 )
                 for _ in range(num_modeling_encoder_block)
             ]
@@ -155,6 +161,8 @@ class EncoderBlock(nn.Module):
             num_conv_block=4,
             dropout=0.1,
             layer_dropout=0.9,
+            use_performer=False,
+            nb_performer_features=None
     ):
         super(EncoderBlock, self).__init__()
 
@@ -166,9 +174,11 @@ class EncoderBlock(nn.Module):
             [conv.DepSepConv(model_dim, model_dim, kernel_size) for _ in range(num_conv_block)]
         )
 
-        self.self_attention = attention.MultiHeadAttention(
-            num_head=num_head, model_dim=model_dim, dropout=dropout
+        self.self_attention = (
+            SelfAttention(dim=model_dim, heads=num_head, dropout=dropout, causal=False, nb_features=nb_performer_features) if use_performer
+            else attention.MultiHeadAttention(num_head=num_head, model_dim=model_dim, dropout=dropout)
         )
+
         self.feedforward_layer = layer.PositionwiseFeedForward(
             model_dim, model_dim * 4, dropout=dropout
         )

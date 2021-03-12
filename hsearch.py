@@ -2,8 +2,6 @@ import os
 
 import torch
 import torch.nn.functional as F
-import torch.optim as optim
-import torch.optim.lr_scheduler as sched
 from tensorboardX import SummaryWriter
 from torch import nn
 from tqdm import tqdm
@@ -65,22 +63,11 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
         return loss, batch_size, preds
 
     def run_experiment(tbx, train_loader, train_size, eval_loader, eval_size, gold_dict, x_args):
-        from models import create_model
-        hidden_size = x_args.hidden_size
-        drop_prob = x_args.drop_prob
-        ema_decay = x_args.ema_decay
-        lr = x_args.lr
-        l2_wd = x_args.l2_wd
-        lr_decay = x_args.lr_decay
+        from models import init_training
         max_grad_norm = x_args.max_grad_norm
+        model, optimizer, scheduler, ema, step = init_training(args, word_vectors, char_vectors, device)
 
-        model = create_model(args.name, hidden_size=hidden_size, word_vectors=word_vectors, char_vectors=char_vectors, drop_prob=drop_prob)
-        model = torch.nn.DataParallel(model, args.gpu_ids)
-        ema = util.EMA(model, ema_decay)
-        optimizer = optim.Adadelta(model.parameters(), lr, weight_decay=l2_wd)
 
-        scheduler = sched.LambdaLR(optimizer, lambda batch: lr_decay ** ((batch * args.batch_size) // 1000))
-        step = 0
         prev_epoch_avg_nll = None
         for epoch in range(step, args.num_epochs):
             model.train()
