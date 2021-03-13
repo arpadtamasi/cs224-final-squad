@@ -58,7 +58,7 @@ class QANet(nn.Module):
             freeze_char_embedding=config.freeze_char_embedding
         )
 
-        self.emb_enc_blks = nn.ModuleList([
+        self.embedding_encoder_blocks = nn.ModuleList([
             EncoderBlock(
                 conv_num=config.embedding.num_convs,
                 d_model=config.model_dim,
@@ -73,7 +73,7 @@ class QANet(nn.Module):
 
         self.cq_att = CQAttention(d_model=config.model_dim)
         self.cq_resizer = Initialized_Conv1d(config.model_dim * 4, config.model_dim)
-        self.model_enc_blks = nn.ModuleList([
+        self.model_encoder_blocks = nn.ModuleList([
             EncoderBlock(
                 conv_num=config.modeling.num_convs,
                 d_model=config.model_dim,
@@ -89,35 +89,32 @@ class QANet(nn.Module):
         self.PAD = config.pad
         self.Lc = config.context_len
         self.Lq = config.question_len
-        self.dropout = config.dropout
+        self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, Cwid, Ccid, Qwid, Qcid):
         maskC = (torch.ones_like(Cwid) * self.PAD != Cwid).float()
         maskQ = (torch.ones_like(Qwid) * self.PAD != Qwid).float()
         C, Q = self.emb(Cwid, Ccid), self.emb(Qwid, Qcid)
 
-        Ce, Qe = C, Q
-        for i, blk in enumerate(self.emb_enc_blks):
-            Ce = blk(Ce, maskC)
-            Qe = blk(Qe, maskQ)
+        Ce = self.encode(C, maskC, self.embedding_encoder_blocks)
+        Qe = self.encode(Q, maskQ, self.embedding_encoder_blocks)
 
         X = self.cq_att(Ce, Qe, maskC, maskQ)
+        X = self.cq_resizer(X)
+        X = self.dropout(X)
 
-        M0 = self.cq_resizer(X)
-        M0 = F.dropout(M0, p=self.dropout, training=self.training)
-        for i, blk in enumerate(self.model_enc_blks):
-            M0 = blk(M0, maskC)
-        M1 = M0
-        for i, blk in enumerate(self.model_enc_blks):
-            M0 = blk(M0, maskC)
-        M2 = M0
-        M0 = F.dropout(M0, p=self.dropout, training=self.training)
-        for i, blk in enumerate(self.model_enc_blks):
-            M0 = blk(M0, maskC)
-        M3 = M0
+        M1 = self.encode(X, maskC, self.model_encoder_blocks)
+        M2 = self.encode(M1, maskC, self.model_encoder_blocks)
+        M3 = self.encode(M2, maskC, self.model_encoder_blocks)
+
         p1, p2 = self.out(M1, M2, M3, maskC)
         return p1, p2
 
+    def encode(self, x, mask, encoder_blocks):
+        out = x
+        for encoder_block in encoder_blocks:
+            out = encoder_block(out, mask)
+        return out
 
 class CQAttention(nn.Module):
     def __init__(self, d_model, dropout=0.1):
@@ -186,7 +183,7 @@ class EncoderBlock(nn.Module):
         self.total_blocks = num_blocks
 
     def forward(self, x, mask):
-        l = 1
+        l = 0
         dropout = self.dropout
         out = self.positional_encoding(x)
         for i, conv in enumerate(self.convs):
@@ -214,7 +211,7 @@ class EncoderBlock(nn.Module):
 
     def layer_dropout(self, inputs, residual, sl):
         l = self.block_index * (self.conv_num + 1) + sl
-        L = self.total_blocks * (self.conv_num + 1) + 1
+        L = self.total_blocks * (self.conv_num + 1)
         prob = ((l / L) * (1 - self.layer_dropout_prob))
         if self.training == True:
             survive = torch.empty(1).uniform_(0, 1) < prob
