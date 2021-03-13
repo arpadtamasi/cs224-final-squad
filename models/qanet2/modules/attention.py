@@ -2,7 +2,6 @@ import math
 import copy
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class ScaledDotProductAttention(nn.Module):
@@ -15,7 +14,8 @@ class ScaledDotProductAttention(nn.Module):
         :param dropout: attention dropout rate
         """
         super().__init__()
-        self.dropout = dropout
+        self.dropout = nn.Dropout(dropout)
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, query, key, value, mask=None):
         """
@@ -27,8 +27,8 @@ class ScaledDotProductAttention(nn.Module):
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
         if mask is not None:
             scores = scores.masked_fill_(mask == 0, -1e9)
-        p_attn = F.softmax(scores, dim=-1)
-        p_attn = F.dropout(p_attn, p=self.dropout)
+        p_attn = self.softmax(scores)
+        p_attn = self.dropout(p_attn)
         return torch.matmul(p_attn, value), p_attn
 
 

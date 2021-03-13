@@ -73,8 +73,8 @@ class QANet(nn.Module):
                 config.dropout, config.char_dropout
             )
 
-            self.c_conv = conv.PointwiseConv(self.c_emb, config.model_dim)
-            self.q_conv = conv.PointwiseConv(self.q_emb, config.model_dim)
+            self.c_conv = conv.PointwiseConv(self.c_emb.d_embed, config.model_dim)
+            self.q_conv = conv.PointwiseConv(self.q_emb.d_embed, config.model_dim)
 
         self.embed_encoder_blocks = nn.ModuleList(
             [

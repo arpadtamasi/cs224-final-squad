@@ -46,4 +46,3 @@ class DepthwiseSeparableConv(nn.Module):
         :Output: (batch_num, out_ch, seq_length)
         """
         return self.pointwise_conv(self.depthwise_conv(x))
-
