@@ -36,7 +36,7 @@ class QANetConf:
 
 
 class QANet(nn.Module):
-    def __init__(self, word_mat, char_mat, config: QANetConf, use_performer=False):  # !!! notice: set it to be a config parameter later.
+    def __init__(self, word_mat, char_mat, config: QANetConf, use_performer=False):
         super(QANet, self).__init__()
 
         self.config = config
@@ -46,9 +46,9 @@ class QANet(nn.Module):
             freeze_char_embedding=config.freeze_char_embedding
         )
 
-        self.embedding_encoder = Encoder(config.embedding, config.model_dim, use_performer)
+        self.embedding_encoder = Encoder(config.embedding, config.model_dim, use_performer=use_performer)
 
-        self.cq_att = CQAttention(d_model=config.model_dim)
+        self.cq_att = CQAttention(d_model=config.model_dim, use_performer=use_performer)
         self.cq_resizer = Initialized_Conv1d(config.model_dim * 4, config.model_dim)
 
         self.model_encoder = Encoder(config.modeling, config.model_dim, use_performer)
@@ -80,7 +80,7 @@ class QANet(nn.Module):
 
 
 class CQAttention(nn.Module):
-    def __init__(self, d_model, dropout=0.1):
+    def __init__(self, d_model, dropout=0.1, use_performer=False):
         super().__init__()
         w4C = torch.empty(d_model, 1)
         w4Q = torch.empty(d_model, 1)
@@ -91,6 +91,23 @@ class CQAttention(nn.Module):
         self.w4C = nn.Parameter(w4C)
         self.w4Q = nn.Parameter(w4Q)
         self.w4mlu = nn.Parameter(w4mlu)
+        self.use_performer = use_performer
+
+        if use_performer:
+            self.num_heads = 8
+            self.d_model = d_model
+            from performer_pytorch import FastAttention
+            self.context_to_query_att = FastAttention(
+                dim_heads=d_model // self.num_heads,
+                nb_features=256,
+                causal=False
+            )
+
+            self.query_to_context_att = FastAttention(
+                dim_heads=d_model // self.num_heads,
+                nb_features=256,
+                causal=False
+            )
 
         bias = torch.empty(1)
         nn.init.constant_(bias, 0)
@@ -100,6 +117,18 @@ class CQAttention(nn.Module):
     def forward(self, C, Q, Cmask, Qmask):
         C = C.transpose(1, 2)
         Q = Q.transpose(1, 2)
+        if self.use_performer:
+            A, _ = self.performer_att(C, Q)
+            _, B = self.qa_att(C, Cmask, Q, Qmask)
+            parts = [C, A, torch.mul(C, A), torch.mul(C, B)]
+            out = torch.cat(parts, dim=2)
+        else:
+            A, B = self.qa_att(C, Cmask, Q, Qmask)
+            parts = [C, A, torch.mul(C, A), torch.mul(C, B)]
+            out = torch.cat(parts, dim=2)
+        return out.transpose(1, 2)
+
+    def qa_att(self, C, Cmask, Q, Qmask):
         batch_size_c = C.size()[0]
         batch_size, Lc, d_model = C.shape
         batch_size, Lq, d_model = Q.shape
@@ -110,15 +139,56 @@ class CQAttention(nn.Module):
         S2 = F.softmax(mask_logits(S, Cmask), dim=1)
         A = torch.bmm(S1, Q)
         B = torch.bmm(torch.bmm(S1, S2.transpose(1, 2)), C)
-        out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2)
-        return out.transpose(1, 2)
+        return A, B
+
+    def performer_att(self, C, Q):
+        Q_C = self.split_last_dim(C, self.num_heads)
+        K_Q, V_Q = self.split_last_dim(Q, self.num_heads), self.split_last_dim(Q, self.num_heads)
+        XA = self.query_to_context_att(Q_C, K_Q, V_Q)
+        A = self.combine_last_two_dim(XA.permute(0, 2, 1, 3))
+
+
+        Q_Q = self.split_last_dim(Q, self.num_heads)
+        K_C, V_C = self.split_last_dim(C, self.num_heads), self.split_last_dim(C, self.num_heads)
+        XB = self.context_to_query_att(Q_Q, K_C, V_C)
+        B = self.combine_last_two_dim(XB.permute(0, 2, 1, 3))
+
+        return A, B
+
+    def split_last_dim(self, x, n):
+        """Reshape x so that the last dimension becomes two dimensions.
+        The first of these two dimensions is n.
+        Args:
+        x: a Tensor with shape [..., m]
+        n: an integer.
+        Returns:
+        a Tensor with shape [..., n, m/n]
+        """
+        old_shape = list(x.size())
+        last = old_shape[-1]
+        new_shape = old_shape[:-1] + [n] + [last // n if last else None]
+        ret = x.view(new_shape)
+        return ret.permute(0, 2, 1, 3)
+
+    def combine_last_two_dim(self, x):
+        """Reshape x so that the last two dimension become one.
+        Args:
+        x: a Tensor with shape [..., a, b]
+        Returns:
+        a Tensor with shape [..., ab]
+        """
+        old_shape = list(x.size())
+        a, b = old_shape[-2:]
+        new_shape = old_shape[:-2] + [a * b if a and b else None]
+        ret = x.contiguous().view(new_shape)
+        return ret
 
     def trilinear_for_attention(self, C, Q):
         batch_size, Lc, d_model = C.shape
         batch_size, Lq, d_model = Q.shape
-        dropout = self.dropout
-        C = F.dropout(C, p=dropout, training=self.training)
-        Q = F.dropout(Q, p=dropout, training=self.training)
+        # dropout = self.dropout
+        # C = F.dropout(C, p=dropout, training=self.training)
+        # Q = F.dropout(Q, p=dropout, training=self.training)
         subres0 = torch.matmul(C, self.w4C).expand([-1, -1, Lq])
         subres1 = torch.matmul(Q, self.w4Q).expand([-1, -1, Lc]).transpose(1, 2)
         subres2 = torch.matmul(C * self.w4mlu, Q.transpose(1, 2))
