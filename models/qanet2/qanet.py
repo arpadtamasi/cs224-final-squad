@@ -9,22 +9,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .modules.cnn import DepthwiseSeparableConv
 from .modules.embedding import Embedding
+from .modules.encoder import EncoderBlockConf, Encoder
 from .modules.functional import mask_logits
 from .modules.initialized_conv1d import Initialized_Conv1d
-from .modules.positional_encoding import PositionalEncoding
-from .modules.self_attention import SelfAttention
-
-
-@dataclass
-class EncoderBlockConf:
-    kernel_size: int
-    layer_dropout: float
-    dropout: float
-    num_heads: int
-    num_convs: int
-    num_blocks: int
 
 
 @dataclass
@@ -58,33 +46,13 @@ class QANet(nn.Module):
             freeze_char_embedding=config.freeze_char_embedding
         )
 
-        self.embedding_encoder_blocks = nn.ModuleList([
-            EncoderBlock(
-                conv_num=config.embedding.num_convs,
-                d_model=config.model_dim,
-                num_head=config.embedding.num_heads,
-                k=config.embedding.kernel_size,
-                block_index=i, num_blocks=config.embedding.num_blocks,
-                layer_dropout = config.embedding.layer_dropout,
-                dropout=config.embedding.dropout
-            )
-            for i in range(config.embedding.num_blocks)
-        ])
+        self.embedding_encoder = Encoder(config.embedding, config.model_dim)
 
         self.cq_att = CQAttention(d_model=config.model_dim)
         self.cq_resizer = Initialized_Conv1d(config.model_dim * 4, config.model_dim)
-        self.model_encoder_blocks = nn.ModuleList([
-            EncoderBlock(
-                conv_num=config.modeling.num_convs,
-                d_model=config.model_dim,
-                num_head=config.modeling.num_heads,
-                k=config.modeling.kernel_size,
-                block_index=i, num_blocks=config.modeling.num_blocks,
-                layer_dropout = config.modeling.layer_dropout,
-                dropout=config.modeling.dropout
-            )
-            for i in range(config.modeling.num_blocks)
-        ])
+
+        self.model_encoder = Encoder(config.modeling, config.model_dim)
+
         self.out = Pointer(config.model_dim)
         self.PAD = config.pad
         self.Lc = config.context_len
@@ -96,25 +64,20 @@ class QANet(nn.Module):
         maskQ = (torch.ones_like(Qwid) * self.PAD != Qwid).float()
         C, Q = self.emb(Cwid, Ccid), self.emb(Qwid, Qcid)
 
-        Ce = self.encode(C, maskC, self.embedding_encoder_blocks)
-        Qe = self.encode(Q, maskQ, self.embedding_encoder_blocks)
+        Ce = self.embedding_encoder(C, maskC)
+        Qe = self.embedding_encoder(Q, maskQ)
 
         X = self.cq_att(Ce, Qe, maskC, maskQ)
         X = self.cq_resizer(X)
         X = self.dropout(X)
 
-        M1 = self.encode(X, maskC, self.model_encoder_blocks)
-        M2 = self.encode(M1, maskC, self.model_encoder_blocks)
-        M3 = self.encode(M2, maskC, self.model_encoder_blocks)
+        M1 = self.model_encoder(X, maskC)
+        M2 = self.model_encoder(M1, maskC)
+        M3 = self.model_encoder(M2, maskC)
 
         p1, p2 = self.out(M1, M2, M3, maskC)
         return p1, p2
 
-    def encode(self, x, mask, encoder_blocks):
-        out = x
-        for encoder_block in encoder_blocks:
-            out = encoder_block(out, mask)
-        return out
 
 class CQAttention(nn.Module):
     def __init__(self, d_model, dropout=0.1):
@@ -162,65 +125,6 @@ class CQAttention(nn.Module):
         res = subres0 + subres1 + subres2
         res += self.bias
         return res
-
-
-class EncoderBlock(nn.Module):
-    def __init__(self, conv_num, d_model, num_head, k, block_index, num_blocks, dropout=0.1, layer_dropout=0.9):
-        super().__init__()
-        self.layer_dropout_prob = layer_dropout
-        self.positional_encoding = PositionalEncoding(d_model)
-
-        self.convs = nn.ModuleList([DepthwiseSeparableConv(d_model, d_model, k) for _ in range(conv_num)])
-        self.self_att = SelfAttention(d_model, num_head, dropout=dropout)
-        self.FFN_1 = Initialized_Conv1d(d_model, d_model, relu=True, bias=True)
-        self.FFN_2 = Initialized_Conv1d(d_model, d_model, bias=True)
-        self.norm_C = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(conv_num)])
-        self.norm_1 = nn.LayerNorm(d_model)
-        self.norm_2 = nn.LayerNorm(d_model)
-        self.conv_num = conv_num
-        self.dropout = dropout
-        self.block_index = block_index
-        self.total_blocks = num_blocks
-
-    def forward(self, x, mask):
-        l = 0
-        dropout = self.dropout
-        out = self.positional_encoding(x)
-        for i, conv in enumerate(self.convs):
-            res = out
-            out = self.norm_C[i](out.transpose(1, 2)).transpose(1, 2)
-            if i % 2 == 0:
-                out = F.dropout(out, p=dropout, training=self.training)
-            out = conv(out)
-            out = self.layer_dropout(out, res, l)
-            l += 1
-        res = out
-        out = self.norm_1(out.transpose(1, 2)).transpose(1, 2)
-        out = F.dropout(out, p=dropout, training=self.training)
-        out = self.self_att(out, mask)
-        out = self.layer_dropout(out, res, l)
-        l += 1
-        res = out
-
-        out = self.norm_2(out.transpose(1, 2)).transpose(1, 2)
-        out = F.dropout(out, p=dropout, training=self.training)
-        out = self.FFN_1(out)
-        out = self.FFN_2(out)
-        out = self.layer_dropout(out, res, l)
-        return out
-
-    def layer_dropout(self, inputs, residual, sl):
-        l = self.block_index * (self.conv_num + 1) + sl
-        L = self.total_blocks * (self.conv_num + 1)
-        prob = ((l / L) * (1 - self.layer_dropout_prob))
-        if self.training == True:
-            survive = torch.empty(1).uniform_(0, 1) < prob
-            if survive:
-                return residual
-            else:
-                return F.dropout(inputs, prob, training=self.training) + residual
-        else:
-            return inputs + residual
 
 
 class Pointer(nn.Module):
