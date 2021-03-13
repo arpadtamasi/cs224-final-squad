@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -10,41 +11,92 @@ from .modules.embedding import Embedding
 from .modules.functions import mask_logits
 
 
-class QANet(nn.Module):
-    def __init__(self, word_mat, char_mat, d_model, n_head, len_c, len_q, dropout, dropout_char, freeze_char_embedding):
-        super(QANet, self).__init__()
-        d_word = word_mat.shape[-1]
-        d_char = char_mat.shape[-1]
-        self.char_emb = nn.Embedding.from_pretrained(torch.Tensor(char_mat), freeze=freeze_char_embedding)
-        self.word_emb = nn.Embedding.from_pretrained(torch.Tensor(word_mat))
-        self.emb = Embedding(d_word, d_char, dropout, dropout_char)
-        d_embed = d_word + d_char
+@dataclass
+class EncoderBlockConf:
+    kernel_size: int
+    layer_dropout: float
+    num_heads: int
+    num_convs: int
+    num_blocks: int
 
-        self.context_conv = DepthwiseSeparableConv(d_embed, d_model, 5)
-        self.question_conv = DepthwiseSeparableConv(d_embed, d_model, 5)
-        self.c_emb_enc = EncoderBlock(conv_num=4, ch_num=d_model, k=7, length=len_c, d_model=d_model, n_head=n_head, dropout=dropout)
-        self.q_emb_enc = EncoderBlock(conv_num=4, ch_num=d_model, k=7, length=len_q, d_model=d_model, n_head=n_head, dropout=dropout)
-        self.cq_att = CQAttention(d_model, dropout)
-        self.cq_resizer = DepthwiseSeparableConv(d_model * 4, d_model, 5)
-        enc_blk = EncoderBlock(conv_num=2, ch_num=d_model, k=5, length=len_c, d_model=d_model, n_head=n_head, dropout=dropout)
+@dataclass
+class QANetConf:
+    aligned_query_embedding: bool = True
+    freeze_char_embedding: bool = False
+    dropout: float = 0.1
+    char_dropout: float = 0.05
+    model_dim: int = 128
+
+    context_len: int = 401
+    question_len: int = 51
+
+    embedding: EncoderBlockConf = EncoderBlockConf(
+        kernel_size=7, layer_dropout=0.9,
+        num_heads=8, num_convs=4, num_blocks=1
+    )
+    modeling: EncoderBlockConf = EncoderBlockConf(
+        kernel_size=5, layer_dropout=0.9,
+        num_heads=8, num_convs=2, num_blocks=7
+    )
+
+class QANet(nn.Module):
+    def __init__(self, word_vectors, char_vectors, config: QANetConf):
+        super(QANet, self).__init__()
+
+        self.emb = Embedding(word_vectors, char_vectors, config.freeze_char_embedding, config.dropout, config.char_dropout)
+        d_embed = self.emb.d_embed
+
+        self.c_conv = DepthwiseSeparableConv(d_embed, config.model_dim, 5)
+        self.q_conv = DepthwiseSeparableConv(d_embed, config.model_dim, 5)
+
+        self.c_emb_enc = EncoderBlock(
+            conv_num=config.embedding.num_convs,
+            ch_num=config.model_dim,
+            k=config.embedding.kernel_size,
+            length=config.context_len,
+            d_model=config.model_dim,
+            n_head=config.embedding.num_heads,
+            dropout=config.dropout
+        )
+        self.q_emb_enc = EncoderBlock(
+            conv_num=config.embedding.num_convs,
+            ch_num=config.model_dim,
+            k=config.embedding.kernel_size,
+            length=config.question_len,
+            d_model=config.model_dim,
+            n_head=config.embedding.num_heads,
+            dropout=config.dropout
+        )
+
+        self.cq_att = CQAttention(config.model_dim, config.dropout)
+        self.cq_resizer = DepthwiseSeparableConv(config.model_dim * 4, config.model_dim, 5)
+
+        enc_blk = EncoderBlock(
+            conv_num=config.modeling.num_convs,
+            ch_num=config.model_dim,
+            k=config.modeling.kernel_size,
+            length=config.context_len,
+            d_model=config.model_dim,
+            n_head=config.modeling.num_heads,
+            dropout=config.dropout
+        )
         self.model_enc_blks = nn.ModuleList([enc_blk] * 7)
 
-        self.linear_start = nn.Linear(d_model * 2, 1)
-        self.linear_end = nn.Linear(d_model * 2, 1)
+        self.linear_start = nn.Linear(config.model_dim * 2, 1)
+        self.linear_end = nn.Linear(config.model_dim * 2, 1)
+
+        self.dropout = nn.Dropout(config.dropout)
 
     # noinspection PyUnresolvedReferences
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         c_mask = (torch.zeros_like(cw_idxs) != cw_idxs).float()  # batch_size x para_limit
         q_mask = (torch.zeros_like(qw_idxs) != qw_idxs).float()  # batch_size x ques_limit
 
-        cw_emb, cc_emb = self.word_emb(cw_idxs), self.char_emb(cc_idxs)  # batch_size x para_limit x w_embed, batch_size x para_limit x char_limit x c_embed
-        qw_emb, qc_emb = self.word_emb(qw_idxs), self.char_emb(qc_idxs)  # batch_size x ques_limit x w_embed, batch_size x ques_limit x char_limit x c_embed
+        c_emb = self.emb(cw_idxs, cc_idxs)  # batch_size x para_limit x d_embed
+        q_emb = self.emb(qw_idxs, qc_idxs)  # batch_size x ques_limit x d_embed
 
-        c_emb = self.emb(cw_emb, cc_emb)  # batch_size x para_limit x d_embed
-        q_emb = self.emb(qw_emb, qc_emb)  # batch_size x ques_limit x d_embed
-
-        c_conv = self.context_conv(c_emb)  # batch_size x d_model x para_limit
-        q_conv = self.question_conv(q_emb)  # batch_size x d_model x ques_limit
+        c_conv = self.c_conv(c_emb)  # batch_size x d_model x para_limit
+        q_conv = self.q_conv(q_emb)  # batch_size x d_model x ques_limit
 
         c_enc = self.c_emb_enc(c_conv, c_mask)  # batch_size x d_model x para_limit
         q_enc = self.q_emb_enc(q_conv, q_mask)  # batch_size x d_model x ques_limit
@@ -103,4 +155,5 @@ class CQAttention(nn.Module):
         out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2)
         out = F.dropout(out, p=self.dropout, training=self.training)
         return out.transpose(1, 2)
+
 

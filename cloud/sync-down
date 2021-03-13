@@ -1,0 +1,6 @@
+#!/bin/bash
+
+source "$(dirname $0)/variables"
+
+rsync -arzP --info=progress2 --exclude "baseline*" $INSTANCE:~/squad/save/ ./save
+rsync -arzP --info=progress2 $INSTANCE:~/squad/data/ ./data

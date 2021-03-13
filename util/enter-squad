@@ -1,0 +1,9 @@
+#!/bin/bash
+
+session="squad"
+window="Squad"
+tmux new-session -d -s $session
+tmux rename-window -t 0 $window
+tmux send-keys -t $window 'cd squad' C-m
+tmux send-keys -t $window 'conda activate squad' C-m
+tmux attach-session -t $session

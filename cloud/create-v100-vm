@@ -1,0 +1,15 @@
+#!/bin/bash
+
+source "$(dirname $0)/variables"
+
+  gcloud compute instances create $INSTANCE \
+    --machine-type="n1-highmem-8" \
+    --image-family="pytorch-latest-gpu" \
+    --image-project="deeplearning-platform-release" \
+    --accelerator="type=nvidia-tesla-v100,count=4" \
+    --metadata="install-nvidia-driver=True" \
+    --preemptible
+
+gcloud compute --quiet disks resize $INSTANCE --size 200GB
+gcloud compute instances reset $INSTANCE
+

@@ -1,0 +1,13 @@
+{
+  "model": {
+    "hidden_size": 100,
+    "drop_prob": 0.0
+  },
+  "optimizer": {
+    "learning_rate": [0.01, 0.1, 0.2],
+    "weight_decay": 0.0
+  },
+  "scheduler": {
+    "multiplier": [0.995]
+  }
+}

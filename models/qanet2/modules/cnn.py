@@ -1,9 +1,28 @@
-from torch import nn as nn
+"""
+CNN modules.
+"""
+import torch.nn as nn
 
 
 class DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_ch, out_ch, k, dim=1, bias=True):
-        super(DepthwiseSeparableConv, self).__init__()
+    """
+    Depth-wise separable convolution uses less parameters
+    to generate output by convolution.
+    :Examples:
+        >>> m = DepthwiseSeparableConv(300, 200, 5, dim=1)
+        >>> input = torch.randn(32, 300, 20)
+        >>> output = m(input)
+    """
+
+    def __init__(self, in_ch, out_ch, k, dim=1, bias=False):
+        """
+        :param in_ch: input hidden dimension size
+        :param out_ch: output hidden dimension size
+        :param k: kernel size
+        :param dim: default 1. 1D conv or 2D conv
+        :param bias: default False. Add bias or not
+        """
+        super().__init__()
         if dim == 1:
             self.depthwise_conv = nn.Conv1d(
                 in_channels=in_ch, out_channels=in_ch,
@@ -19,11 +38,11 @@ class DepthwiseSeparableConv(nn.Module):
                 in_channels=in_ch, out_channels=out_ch,
                 kernel_size=1, padding=0, bias=bias)
         else:
-            raise Exception("Wrong dimension for Depthwise Separable Convolution!")
-        nn.init.kaiming_normal_(self.depthwise_conv.weight)
-        nn.init.constant_(self.depthwise_conv.bias, 0.0)
-        nn.init.kaiming_normal_(self.depthwise_conv.weight)
-        nn.init.constant_(self.pointwise_conv.bias, 0.0)
+            raise Exception("Incorrect dimension!")
 
     def forward(self, x):
+        """
+        :Input: (batch_num, in_ch, seq_length)
+        :Output: (batch_num, out_ch, seq_length)
+        """
         return self.pointwise_conv(self.depthwise_conv(x))

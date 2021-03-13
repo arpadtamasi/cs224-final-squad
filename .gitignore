@@ -5,4 +5,4 @@ __pycache__
 data/
 save/
 .vscode/
-/cloud/
+/deliverables/*.synctex.gz

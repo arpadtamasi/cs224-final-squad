@@ -40,14 +40,6 @@ def get_setup_args():
     parser.add_argument('--answer_file',
                         type=str,
                         default='answer.json')
-    parser.add_argument('--para_limit',
-                        type=int,
-                        default=400,
-                        help='Max number of words in a paragraph')
-    parser.add_argument('--ques_limit',
-                        type=int,
-                        default=50,
-                        help='Max number of words to keep from a question')
     parser.add_argument('--test_para_limit',
                         type=int,
                         default=1000,
@@ -92,48 +84,7 @@ def get_train_args():
 
     add_common_args(parser)
     add_train_test_args(parser)
-
-    parser.add_argument('--eval_steps',
-                        type=int,
-                        default=50000,
-                        help='Number of steps between successive evaluations.')
-    parser.add_argument('--lr',
-                        type=float,
-                        default=0.5,
-                        help='Learning rate.')
-    parser.add_argument('--l2_wd',
-                        type=float,
-                        default=0,
-                        help='L2 weight decay.')
-    parser.add_argument('--num_epochs',
-                        type=int,
-                        default=30,
-                        help='Number of epochs for which to train. Negative means forever.')
-    parser.add_argument('--drop_prob',
-                        type=float,
-                        default=0.2,
-                        help='Probability of zeroing an activation in dropout layers.')
-    parser.add_argument('--metric_name',
-                        type=str,
-                        default='F1',
-                        choices=('NLL', 'EM', 'F1'),
-                        help='Name of dev metric to determine best checkpoint.')
-    parser.add_argument('--max_checkpoints',
-                        type=int,
-                        default=5,
-                        help='Maximum number of checkpoints to keep on disk.')
-    parser.add_argument('--max_grad_norm',
-                        type=float,
-                        default=5.0,
-                        help='Maximum gradient norm for gradient clipping.')
-    parser.add_argument('--seed',
-                        type=int,
-                        default=224,
-                        help='Random seed for reproducibility.')
-    parser.add_argument('--ema_decay',
-                        type=float,
-                        default=0.999,
-                        help='Decay rate for exponential moving average of parameters.')
+    add_train_args(parser)
 
     args = parser.parse_args()
 
@@ -148,6 +99,44 @@ def get_train_args():
 
     return args
 
+def get_hsearch_args():
+    parser = argparse.ArgumentParser('Hyperparameter search on SQuAD')
+
+    add_common_args(parser)
+    add_train_test_args(parser)
+    add_train_args(parser)
+
+    parser.add_argument('--k_fold',
+                        type=int,
+                        default=None,
+                        help='K-Fold search.')
+
+    parser.add_argument('--max_experiments',
+                        type=int,
+                        default=10,
+                        help='Max experiments.')
+
+    parser.add_argument('--experiments_file',
+                        type=str,
+                        help='Hyperparameter grid path.')
+
+    parser.add_argument('--min_nll_decrease',
+                        type=float,
+                        default=None,
+                        help='Hyperparameter grid path.')
+
+    args = parser.parse_args()
+
+    if args.metric_name == 'NLL':
+        # Best checkpoint is the one that minimizes negative log-likelihood
+        args.maximize_metric = False
+    elif args.metric_name in ('EM', 'F1'):
+        # Best checkpoint is the one that maximizes EM or F1
+        args.maximize_metric = True
+    else:
+        raise ValueError(f'Unrecognized metric name: "{args.metric_name}"')
+
+    return args
 
 def get_test_args():
     """Get arguments needed in test.py."""
@@ -206,7 +195,14 @@ def add_common_args(parser):
     parser.add_argument('--test_eval_file',
                         type=str,
                         default='test_eval.json')
-
+    parser.add_argument('--para_limit',
+                        type=int,
+                        default=400,
+                        help='Max number of words in a paragraph')
+    parser.add_argument('--ques_limit',
+                        type=int,
+                        default=50,
+                        help='Max number of words to keep from a question')
 
 def add_train_test_args(parser):
     """Add arguments common to train.py and test.py"""
@@ -248,3 +244,62 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
+
+def add_train_args(parser):
+    parser.add_argument('--eval_steps',
+                        type=int,
+                        default=50000,
+                        help='Number of steps between successive evaluations.')
+    parser.add_argument('--lr',
+                        type=float,
+                        default=0.5,
+                        help='Learning rate.')
+    parser.add_argument('--lr_decay',
+                        type=float,
+                        default=1,
+                        help='Learning rate decay.')
+    parser.add_argument('--l2_wd',
+                        type=float,
+                        default=0,
+                        help='L2 weight decay.')
+    parser.add_argument('--num_epochs',
+                        type=int,
+                        default=30,
+                        help='Number of epochs for which to train. Negative means forever.')
+    parser.add_argument('--drop_prob',
+                        type=float,
+                        default=0.2,
+                        help='Probability of zeroing an activation in dropout layers.')
+    parser.add_argument('--me_drop_prob',
+                        type=float,
+                        default=0.2,
+                        help='Probability of zeroing an activation in model encoder dropout layers in QANet.')
+    parser.add_argument('--layer_drop_prob',
+                        type=float,
+                        default=0.9,
+                        help='Probability of zeroing a layer in encoder blocks.')
+    parser.add_argument('--metric_name',
+                        type=str,
+                        default='F1',
+                        choices=('NLL', 'EM', 'F1'),
+                        help='Name of dev metric to determine best checkpoint.')
+    parser.add_argument('--max_checkpoints',
+                        type=int,
+                        default=5,
+                        help='Maximum number of checkpoints to keep on disk.')
+    parser.add_argument('--max_grad_norm',
+                        type=float,
+                        default=5.0,
+                        help='Maximum gradient norm for gradient clipping.')
+    parser.add_argument('--seed',
+                        type=int,
+                        default=224,
+                        help='Random seed for reproducibility.')
+    parser.add_argument('--ema_decay',
+                        type=float,
+                        default=0.999,
+                        help='Decay rate for exponential moving average of parameters.')
+    parser.add_argument('--config_file',
+                        type=str,
+                        default=None,
+                        help='Training config file')

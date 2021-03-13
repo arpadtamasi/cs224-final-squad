@@ -1,0 +1,12 @@
+#!/bin/bash
+
+
+#ZONE=$(gcloud config --quiet get-value compute/zone)
+#PROJECT=$(gcloud config --quiet get-value core/project)
+
+if [ ! -z "$1" ]; then
+    INSTANCE=$1
+elif [ -z "$INSTANCE" ];
+    then echo "set INSTANCE"
+    exit 1
+fi

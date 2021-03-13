@@ -12,8 +12,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -21,13 +19,13 @@ from ujson import load as json_load
 
 import util
 from args import get_train_args
-from models import create_model
+from models import init_training
 from util import SQuAD
 
 
 def main(args):
     # Set up logging and devices
-    args.save_dir = util.get_save_dir(args.save_dir, args.name, args.dataset, training=True)
+    args.save_dir = util.get_save_dir(args.save_dir, args.name, args.dataset, mode="train")
     log = util.get_logger(args.save_dir, args.name)
     tbx = SummaryWriter(args.save_dir)
     device, args.gpu_ids = util.get_available_devices()
@@ -41,30 +39,19 @@ def main(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    # Get embeddings
-    log.info('Loading embeddings...')
-    word_emb_file = util.preprocessed_path(args.word_emb_file, args.data_dir, args.dataset)
-    char_emb_file = util.preprocessed_path(args.char_emb_file, args.data_dir, args.dataset)
-    word_vectors = util.torch_from_json(word_emb_file)
-    char_vectors = util.torch_from_json(char_emb_file)
+    # Get data loader
+    log.info('Building dataset...')
+    collate_fn = None if args.name in ['qanet'] else util.collate_fn
+    train_loader, train_size, dev_loader, dev_size = build_datasets(args, collate_fn)
+    dev_eval_dict = util.load_eval_file(args, args.dev_eval_file)
 
     # Get model
     log.info(f'Building {args.name} model...')
-    model = create_model(
-        args.name,
-        hidden_size=args.hidden_size,
-        word_vectors=word_vectors, char_vectors=char_vectors,
-        drop_prob=args.drop_prob
-    )
-    model = nn.DataParallel(model, args.gpu_ids)
-    if args.load_path:
-        log.info(f'Loading checkpoint from {args.load_path}...')
-        model, step = util.load_model(model, args.load_path, args.gpu_ids)
-    else:
-        step = 0
-    model = model.to(device)
-    model.train()
-    ema = util.EMA(model, args.ema_decay)
+    config = None
+    if args.config_file:
+        with open(args.config_file, 'r') as pf: config = json_load(pf)
+        log.info(f"Model config: {dumps(config, indent=4, sort_keys=True)}")
+    model, optimizer, scheduler, ema, step = init_training(args, *(load_embeddings(args)), device, config=config)
 
     # Get saver
     saver = util.CheckpointSaver(args.save_dir,
@@ -73,40 +60,14 @@ def main(args):
                                  maximize_metric=args.maximize_metric,
                                  log=log)
 
-    # Get optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
-    scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
-
-    # Get data loader
-    log.info('Building dataset...')
-
-    collate_fn=None if args.name in ['qanet'] else util.collate_fn
-    train_record_file = util.preprocessed_path(args.train_record_file, args.data_dir, args.dataset)
-    train_dataset = SQuAD(train_record_file, args.use_squad_v2)
-    train_loader = data.DataLoader(train_dataset,
-                                   batch_size=args.batch_size,
-                                   shuffle=True,
-                                   num_workers=args.num_workers,
-                                   collate_fn=collate_fn)
-
-    dev_record_file = util.preprocessed_path(args.dev_record_file, args.data_dir, args.dataset)
-    dev_dataset = SQuAD(dev_record_file, args.use_squad_v2)
-    dev_loader = data.DataLoader(dev_dataset,
-                                 batch_size=args.batch_size,
-                                 shuffle=False,
-                                 num_workers=args.num_workers,
-                                 collate_fn=collate_fn)
-
     # Train
     log.info('Training...')
     steps_till_eval = args.eval_steps
-    epoch = step // len(train_dataset)
+    epoch = step // train_size
     while epoch != args.num_epochs:
         epoch += 1
         log.info(f'Starting epoch {epoch}...')
-        with torch.enable_grad(), \
-                tqdm(total=len(train_loader.dataset)) as progress_bar:
+        with torch.enable_grad(), tqdm(total=train_size) as progress_bar:
             for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
@@ -132,17 +93,18 @@ def main(args):
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
-                scheduler.step() # deprecated (step // batch_size)
+                scheduler.step()
                 ema(model, step // batch_size)
 
                 # Log info
                 step += batch_size
                 progress_bar.update(batch_size)
-                progress_bar.set_postfix(epoch=epoch,
-                                         NLL=loss_val)
+                current_lr = optimizer.param_groups[0]['lr']
+                progress_bar.set_postfix(epoch=epoch, STEP=util.millify(step), LR=current_lr, NLL=loss_val)
+
                 tbx.add_scalar('train/NLL', loss_val, step)
                 tbx.add_scalar('train/LR',
-                               optimizer.param_groups[0]['lr'],
+                               current_lr,
                                step)
 
                 steps_till_eval -= batch_size
@@ -169,14 +131,40 @@ def main(args):
                     for k, v in results.items():
                         tbx.add_scalar(f'dev/{k}', v, step)
 
-                    dev_eval_file = util.preprocessed_path(args.dev_eval_file, args.data_dir, args.dataset)
                     util.visualize(tbx,
                                    pred_dict=pred_dict,
-                                   eval_path=dev_eval_file,
+                                   eval_dict=dev_eval_dict,
                                    step=step,
                                    split='dev',
                                    num_visuals=args.num_visuals)
 
+
+def build_datasets(args, collate_fn=None):
+    train_loader, train_size = build_loader(args.train_record_file, args.data_dir, args.dataset, args.batch_size, args.num_workers, True, args.use_squad_v2, collate_fn)
+    dev_loader, dev_size = build_loader(args.dev_record_file, args.data_dir, args.dataset, args.batch_size, args.num_workers, False, args.use_squad_v2, collate_fn)
+    return train_loader, train_size, dev_loader, dev_size
+
+
+def build_loader(record_file, data_dir, dataset, batch_size, num_workers, shuffle, use_squad_v2=True, collate_fn=None):
+    record_file_path = util.preprocessed_path(record_file, data_dir, dataset)
+    dataset = SQuAD(record_file_path, use_squad_v2)
+    num_samples = len(dataset)
+    loader = data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        collate_fn=collate_fn
+    )
+    return loader, num_samples
+
+
+def load_embeddings(args):
+    word_emb_file = util.preprocessed_path(args.word_emb_file, args.data_dir, args.dataset)
+    char_emb_file = util.preprocessed_path(args.char_emb_file, args.data_dir, args.dataset)
+    word_vectors = util.torch_from_json(word_emb_file)
+    char_vectors = util.torch_from_json(char_emb_file)
+    return word_vectors, char_vectors
 
 
 def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
@@ -186,8 +174,7 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
     pred_dict = {}
     with open(eval_file, 'r') as fh:
         gold_dict = json_load(fh)
-    with torch.no_grad(), \
-            tqdm(total=len(data_loader.dataset)) as progress_bar:
+    with torch.no_grad(), tqdm(total=len(data_loader.dataset)) as progress_bar:
         for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in data_loader:
             # Setup for forward
             cw_idxs = cw_idxs.to(device)
