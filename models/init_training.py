@@ -21,6 +21,8 @@ def init_training(args, word_vectors, char_vectors, device, config=None):
             model, optimizer, scheduler = init_qanet_training(args, char_vectors, word_vectors, config)
         elif model_name == 'qanet2':
             model, optimizer, scheduler = init_qanet2_training(args, char_vectors, word_vectors, config)
+        elif model_name == 'qanet2-performer':
+            model, optimizer, scheduler = init_qanet2_training(args, char_vectors, word_vectors, config, use_performer=True)
         else:
             raise Exception("Unknown model")
 
@@ -76,14 +78,15 @@ def init_qanet_training(args, char_vectors, word_vectors, config):
     scheduler = __qanet_adam_scheduler(optimizer, config, args)
     return model, optimizer, scheduler
 
-def init_qanet2_training(args, char_vectors, word_vectors, config):
+def init_qanet2_training(args, char_vectors, word_vectors, config, use_performer=False):
     from models.qanet2 import QANet, QANetConf
 
     model_config = config.get('model', {})
     model = QANet(
         word_mat=word_vectors,
         char_mat=char_vectors,
-        config=load_dataclass(model_config, QANetConf)
+        config=load_dataclass(model_config, QANetConf),
+        use_performer=use_performer
     )
     optimizer = __qanet_adam_optimizer(model, config)
     scheduler = __qanet_adam_scheduler(optimizer, config, args)

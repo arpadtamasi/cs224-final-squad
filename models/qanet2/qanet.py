@@ -36,7 +36,7 @@ class QANetConf:
 
 
 class QANet(nn.Module):
-    def __init__(self, word_mat, char_mat, config: QANetConf):  # !!! notice: set it to be a config parameter later.
+    def __init__(self, word_mat, char_mat, config: QANetConf, use_performer=False):  # !!! notice: set it to be a config parameter later.
         super(QANet, self).__init__()
 
         self.config = config
@@ -46,12 +46,12 @@ class QANet(nn.Module):
             freeze_char_embedding=config.freeze_char_embedding
         )
 
-        self.embedding_encoder = Encoder(config.embedding, config.model_dim)
+        self.embedding_encoder = Encoder(config.embedding, config.model_dim, use_performer)
 
         self.cq_att = CQAttention(d_model=config.model_dim)
         self.cq_resizer = Initialized_Conv1d(config.model_dim * 4, config.model_dim)
 
-        self.model_encoder = Encoder(config.modeling, config.model_dim)
+        self.model_encoder = Encoder(config.modeling, config.model_dim, use_performer)
 
         self.out = Pointer(config.model_dim)
         self.PAD = config.pad
@@ -120,7 +120,7 @@ class CQAttention(nn.Module):
         C = F.dropout(C, p=dropout, training=self.training)
         Q = F.dropout(Q, p=dropout, training=self.training)
         subres0 = torch.matmul(C, self.w4C).expand([-1, -1, Lq])
-        subres1 = torch.matmul(Q, self.w4Q).transpose(1, 2).expand([-1, Lc, -1])
+        subres1 = torch.matmul(Q, self.w4Q).expand([-1, -1, Lc]).transpose(1, 2)
         subres2 = torch.matmul(C * self.w4mlu, Q.transpose(1, 2))
         res = subres0 + subres1 + subres2
         res += self.bias
