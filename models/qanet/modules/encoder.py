@@ -49,7 +49,7 @@ class EncoderBlock(nn.Module):
         layers_per_block = (config.num_convs + 2)
         last_layer = config.num_blocks * layers_per_block
         first_layer = block_index * layers_per_block
-        l = first_layer
+        l = first_layer + 1
         self.conv_blocks = nn.Sequential(*[
             ResidualConnection(
                 model_dim=model_dim,
@@ -60,7 +60,7 @@ class EncoderBlock(nn.Module):
             for i in range(config.num_convs)
         ])
 
-        l = first_layer + config.num_blocks + 1
+        l = first_layer + config.num_convs + 1
         self.attention = ResidualConnection(
             model_dim=model_dim,
             submodule=SelfAttention(model_dim, config.num_heads, dropout=config.dropout, performer_config=config.performer),
@@ -68,7 +68,7 @@ class EncoderBlock(nn.Module):
             layernorm=True, dropout=config.dropout
         )
 
-        l = first_layer + config.num_blocks + 2
+        l = first_layer + config.num_convs + 2
         self.feedforward = ResidualConnection(
             model_dim=model_dim,
             submodule=nn.Sequential(
@@ -78,6 +78,7 @@ class EncoderBlock(nn.Module):
             l=l, L=last_layer, layer_dropout=config.layer_dropout,
             layernorm=True, dropout=config.dropout
         )
+
 
     def forward(self, x, **kwargs):
         enc = self.positional_encoding(x)
@@ -98,11 +99,7 @@ class ResidualConnection(nn.Module):
         self.submodule = submodule
 
     def forward(self, x, **kwargs):
-        drop = (
-                self.training
-                and self.survival is not None
-                and torch.bernoulli(self.survival).item() == 0
-        )
+        drop = (self.training and torch.bernoulli(self.survival).item() == 0)
         if drop:
             return x
         else:
