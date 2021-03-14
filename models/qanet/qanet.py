@@ -65,16 +65,16 @@ class QANet(nn.Module):
         maskQ = (torch.ones_like(Qwid) * self.PAD != Qwid).float()
         C, Q = self.emb(Cwid, Ccid), self.emb(Qwid, Qcid)
 
-        Ce = self.embedding_encoder(C, maskC)
-        Qe = self.embedding_encoder(Q, maskQ)
+        Ce = self.embedding_encoder(C, mask=maskC)
+        Qe = self.embedding_encoder(Q, mask=maskQ)
 
         X = self.cq_att(Ce, Qe, maskC, maskQ)
         X = self.cq_resizer(X)
         X = self.dropout(X)
 
-        M1 = self.model_encoder(X, maskC)
-        M2 = self.model_encoder(M1, maskC)
-        M3 = self.model_encoder(M2, maskC)
+        M1 = self.model_encoder(X, mask=maskC)
+        M2 = self.model_encoder(M1, mask=maskC)
+        M3 = self.model_encoder(M2, mask=maskC)
 
         p1, p2 = self.out(M1, M2, M3, maskC)
         return p1, p2

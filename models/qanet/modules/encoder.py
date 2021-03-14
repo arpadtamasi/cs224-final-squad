@@ -35,9 +35,9 @@ class Encoder(nn.Module):
             for i in range(config.num_blocks)
         ])
 
-    def forward(self, x, mask):
+    def forward(self, x, **kwargs):
         from functools import reduce
-        return reduce(lambda t, block: block(t, mask), self.blocks, x)
+        return reduce(lambda t, block: block(t, **kwargs), self.blocks, x)
 
 
 class EncoderBlock(nn.Module):
@@ -79,10 +79,10 @@ class EncoderBlock(nn.Module):
             layernorm=True, dropout=config.dropout
         )
 
-    def forward(self, x, mask):
+    def forward(self, x, **kwargs):
         enc = self.positional_encoding(x)
         conv = self.conv_blocks(enc)
-        att = self.attention(conv, mask=mask)
+        att = self.attention(conv, **kwargs)
         ff = self.feedforward(att)
         return ff
 
