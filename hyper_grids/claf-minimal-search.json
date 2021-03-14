@@ -8,7 +8,9 @@
     "embedding": {
       "kernel_size": 5,
       "layer_dropout": 0,
-      "dropout": [0.01, 0.02, 0.1, 0.2],
+      "dropout": {
+        "hyperparam-search": [0.01, 0.02, 0.1, 0.2]
+      },
       "num_heads": 1,
       "num_convs": 1,
       "num_blocks": 1
@@ -16,7 +18,9 @@
     "modeling": {
       "kernel_size": 5,
       "layer_dropout": 0,
-      "dropout": [0.01, 0.02, 0.1, 0.2],
+      "dropout": {
+        "hyperparam-search": [0.01, 0.02, 0.1, 0.2]
+      },
       "num_heads": 1,
       "num_convs": 1,
       "num_blocks": 1

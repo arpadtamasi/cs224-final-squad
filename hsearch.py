@@ -139,7 +139,7 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
         avg_meter = util.MultiAverageMeter(['F1', 'EM', 'AvNA', 'NLL'])
         gold_dict = train_gold_dict
         for fold_index, train_loader, train_size, test_loader, test_size in kfold_generator(args, k_fold_spits, training_dataset):
-            save_dir = os.path.join(experiment_save_dir, *GridSearch.experiment_path(experiment), f"fold={fold_index + 1}")
+            save_dir = os.path.join(experiment_save_dir, *GridSearch.tags(experiment), f"fold={fold_index + 1}")
             tbx = SummaryWriter(save_dir)
 
             model, steps = run_experiment(tbx, train_loader, train_size, test_loader, test_size, gold_dict, config)
@@ -155,7 +155,7 @@ def create_training_function(args, experiment_save_dir, k_fold_spits=None):
         import torch.utils.data as data
         train_loader = data.DataLoader(training_dataset, shuffle=True, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=None)
         eval_loader = data.DataLoader(eval_dataset, shuffle=False, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=None)
-        save_dir = os.path.join(experiment_save_dir, *GridSearch.experiment_path(experiment))
+        save_dir = os.path.join(experiment_save_dir, *GridSearch.tags(experiment))
         tbx = SummaryWriter(save_dir)
 
         train_size = len(training_dataset)

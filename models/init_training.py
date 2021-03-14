@@ -15,14 +15,10 @@ def init_training(args, word_vectors, char_vectors, device, config=None):
     if model_name == 'baseline':
         model, optimizer, scheduler = init_baseline_training(args, word_vectors, config)
     else:
-        if model_name == 'claf':
-            model, optimizer, scheduler = init_claf_training(args, char_vectors, word_vectors, config)
-        elif model_name == 'qanet':
-            model, optimizer, scheduler = init_qanet_training(args, char_vectors, word_vectors, config)
-        elif model_name == 'qanet2':
+        if model_name == 'qanet2':
             model, optimizer, scheduler = init_qanet2_training(args, char_vectors, word_vectors, config)
         elif model_name == 'qanet2-performer':
-            model, optimizer, scheduler = init_qanet2_training(args, char_vectors, word_vectors, config, use_performer=True)
+            model, optimizer, scheduler = init_qanet2_training(args, char_vectors, word_vectors, config)
         else:
             raise Exception("Unknown model")
 
@@ -65,47 +61,18 @@ def init_baseline_training(args, word_vectors, config):
     return model, optimizer, scheduler
 
 
-def init_qanet_training(args, char_vectors, word_vectors, config):
+def init_qanet2_training(args, char_vectors, word_vectors, config):
     from models.qanet import QANet, QANetConf
-
-    model_config = config.get('model', {})
-    model = QANet(
-        word_vectors=word_vectors,
-        char_vectors=char_vectors,
-        config=load_dataclass(model_config, QANetConf)
-    )
-    optimizer = __qanet_adam_optimizer(model, config)
-    scheduler = __qanet_adam_scheduler(optimizer, config, args)
-    return model, optimizer, scheduler
-
-def init_qanet2_training(args, char_vectors, word_vectors, config, use_performer=False):
-    from models.qanet2 import QANet, QANetConf
 
     model_config = config.get('model', {})
     model = QANet(
         word_mat=word_vectors,
         char_mat=char_vectors,
         config=load_dataclass(model_config, QANetConf),
-        use_performer=use_performer
     )
     optimizer = __qanet_adam_optimizer(model, config)
     scheduler = __qanet_adam_scheduler(optimizer, config, args)
     return model, optimizer, scheduler
-
-def init_claf_training(args, char_vectors, word_vectors, config):
-    from models.claf import QANet, QANetConf
-
-    model_config = config.get('model', {})
-    model = QANet(
-        word_vectors=word_vectors,
-        char_vectors=char_vectors,
-        config=load_dataclass(model_config, QANetConf)
-    )
-    optimizer = __qanet_adam_optimizer(model, config)
-    scheduler = __qanet_adam_scheduler(optimizer, config, args)
-
-    return model, optimizer, scheduler
-
 
 def __qanet_adam_scheduler(optimizer, config, args):
     scheduler_config = config.get('scheduler', {})

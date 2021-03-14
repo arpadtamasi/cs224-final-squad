@@ -13,49 +13,58 @@ class GridSearch:
         import random
         all_experiments = list(self.experiments)
         random.shuffle(all_experiments)
-
         return all_experiments[:max_experiments]
 
     @property
     def experiments(self):
-        def generate(keys, acc):
-            if keys:
-                k, tail = keys[0], keys[1:]
-                values = self.grid[k]
-                for v in values:
-                    acc = acc.copy()
-                    acc[k] = v
-                    yield from generate(tail, acc)
-            else:
-                yield self.__select_config(acc)
+        from functools import reduce
+        def extend(configs, experiments):
+            experiment_key, alternatives = experiments
+            return (
+                {**config, **{experiment_key: alternative}}
+                for config in configs
+                for alternative in alternatives
+            )
 
-        yield from generate(list(self.grid.keys()), {})
+        experiment_settings = reduce(extend, self.grid.items(), [{}])
+        return (self.experiment_config(settings) for settings in experiment_settings)
 
+    def experiment_config(self, settings):
+        import copy
+        import operator
+        from functools import reduce
+        config = copy.deepcopy(self.config)
+        for path, value in [(p.split('.'), v) for p, v in settings.items()]:
+            parent_path = path[:-1]
+            key = path[-1]
+            parent = reduce(operator.getitem, parent_path, config)
+            assert (key in parent)
+            parent[key] = value
+        return (settings, config)
 
     def __read_grid(self, config, path=''):
         for k in config.keys():
             key_path = f'{path}.{k}' if path else k
             v = config[k]
             if isinstance(v, dict):
-                self.__read_grid(v, key_path)
-            elif isinstance(v, list):
-                self.grid[key_path] = v
-
-    def __select_config(self, arguments):
-        import copy
-        import operator
-        from functools import reduce
-        config = copy.deepcopy(self.config)
-        for path, value in [(p.split('.'), v) for p, v in arguments.items()]:
-            parent_path = path[:-1]
-            key = path[-1]
-            parent = reduce(operator.getitem, parent_path, config)
-            assert key in parent and isinstance(parent[key], list)
-            parent[key] = value
-        return (arguments, config)
+                if v.keys() == {"hyperparam-search"}:
+                    alternatives = v["hyperparam-search"]
+                    assert isinstance(alternatives, list)
+                    self.grid[key_path] = alternatives
+                else:
+                    self.__read_grid(v, key_path)
 
     @staticmethod
-    def experiment_path(experiment):
-        return [f'{n}={experiment[n]}' for n in (sorted(list(experiment.keys())))]
+    def tags(experiment):
+        def tags(path, value):
+            if isinstance(value, dict):
+                for k in value.keys():
+                    yield from tags(f'{path}.{k}', value[k])
+            else:
+                yield (f'{path}={value}')
 
-
+        return list(
+            tag
+            for key, value in (sorted(experiment.items()))
+            for tag in tags(key, value)
+        )

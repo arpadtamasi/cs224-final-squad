@@ -2,26 +2,34 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from .initialized_conv1d import Initialized_Conv1d
+from .initialized_conv import Initialized_Conv1d
 from .functional import mask_logits
+from dataclasses import dataclass
 
+@dataclass
+class PerformerConf:
+    nb_features: int = 256
+    causal: bool = False
 
 class SelfAttention(nn.Module):
-    def __init__(self, d_model, num_head, dropout, use_performer=False):
+    def __init__(self, d_model, num_head, dropout, performer_config: PerformerConf=None):
         super().__init__()
-        self.use_performer = use_performer
         self.d_model = d_model
         self.num_head = num_head
         self.dropout = dropout
         self.mem_conv = Initialized_Conv1d(in_channels=d_model, out_channels=d_model * 2, kernel_size=1, relu=False, bias=False)
         self.query_conv = Initialized_Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=1, relu=False, bias=False)
 
-        from performer_pytorch import FastAttention
-        self.attn_fn = FastAttention(
-            dim_heads = d_model // num_head,
-            nb_features = 2,
-            causal = False
-        )
+        if performer_config:
+            from performer_pytorch import FastAttention
+            self.performer_attention = FastAttention(
+                dim_heads = d_model // num_head,
+                nb_features = performer_config.nb_features,
+                causal = performer_config.causal
+            )
+        else:
+            self.performer_attention = None
+
         bias = torch.empty(1)
         nn.init.constant_(bias, 0)
         self.bias = nn.Parameter(bias)
@@ -38,7 +46,10 @@ class SelfAttention(nn.Module):
 
         key_depth_per_head = self.d_model // self.num_head
         Q *= key_depth_per_head ** -0.5
-        x = self.attn_fn(Q, K, V) if self.use_performer else self.dot_product_attention(Q, K, V, mask=mask)
+        x = (
+            self.performer_attention(Q, K, V) if self.performer_attention
+            else self.dot_product_attention(Q, K, V, mask=mask)
+        )
         return self.combine_last_two_dim(x.permute(0, 2, 1, 3)).transpose(1, 2)
 
     def dot_product_attention(self, q, k, v, bias=False, mask=None):

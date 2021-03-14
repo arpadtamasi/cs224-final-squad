@@ -6,23 +6,6 @@ import torch.nn as nn
 
 
 class PositionalEncoding(nn.Module):
-    """
-    Positional Encoding
-        in "Attention is All You Need" (https://arxiv.org/abs/1706.03762)
-
-    The use of relative position is possible because sin(x+y) and cos(x+y) can be
-    expressed in terms of y, sin(x) and cos(x).
-
-    (cf. https://github.com/tensorflow/tensor2tensor/blob/42c3f377f441e5a0f431127d63e71414ead291c4/\
-        tensor2tensor/layers/common_attention.py#L388)
-
-    * Args:
-        embed_dim: the number of embedding dimension
-
-    * Kwargs:
-        max_len: the number of maximum sequence length
-    """
-
     def __init__(self, embed_dim, max_length=2000):
         super(PositionalEncoding, self).__init__()
         signal = self._get_timing_signal(max_length, embed_dim)
