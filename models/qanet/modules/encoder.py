@@ -103,7 +103,7 @@ class ResidualConnection(nn.Module):
         if drop:
             return x
         else:
-            normalized = self.norm(x.transpose(1, 2)).transpose(1, 2)
+            normalized = self.norm(x)
             normalized = self.dropout(normalized)
             transformed = self.submodule(normalized, **kwargs)
             return x + transformed

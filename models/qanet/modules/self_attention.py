@@ -34,13 +34,13 @@ class SelfAttention(nn.Module):
         nn.init.constant_(bias, 0)
         self.bias = nn.Parameter(bias)
 
-    def forward(self, queries, mask):
+    def forward(self, queries, mask=None):
         memory = queries
 
         memory = self.mem_conv(memory)
         query = self.query_conv(queries)
-        memory = memory.transpose(1, 2)
-        query = query.transpose(1, 2)
+        memory = memory
+        query = query
         Q = self.split_last_dim(query, self.num_head)
         K, V = [self.split_last_dim(tensor, self.num_head) for tensor in torch.split(memory, self.d_model, dim=2)]
 
@@ -50,7 +50,7 @@ class SelfAttention(nn.Module):
             self.performer_attention(Q, K, V) if self.performer_attention
             else self.dot_product_attention(Q, K, V, mask=mask)
         )
-        return self.combine_last_two_dim(x.permute(0, 2, 1, 3)).transpose(1, 2)
+        return self.combine_last_two_dim(x.permute(0,2,1,3))
 
     def dot_product_attention(self, q, k, v, bias=False, mask=None):
         """dot-product attention.

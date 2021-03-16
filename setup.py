@@ -176,7 +176,7 @@ def get_embedding(counter, data_type, limit=-1, emb_file=None, vec_size=None, nu
     token2idx_dict[NOANSWER] = 2
     embedding_dict[NULL] = [0. for _ in range(vec_size)]
     embedding_dict[OOV] = [0. for _ in range(vec_size)]
-    embedding_dict[NOANSWER] = [0. for _ in range(vec_size)]
+    embedding_dict[NOANSWER] = [np.random.normal(scale=0.1) for _ in range(vec_size)]
     idx2emb_dict = {idx: embedding_dict[token]
                     for token, idx in token2idx_dict.items()}
     emb_mat = [idx2emb_dict[idx] for idx in range(len(idx2emb_dict))]

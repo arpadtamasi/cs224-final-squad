@@ -45,4 +45,4 @@ class DepthwiseSeparableConv(nn.Module):
         :Input: (batch_num, in_ch, seq_length)
         :Output: (batch_num, out_ch, seq_length)
         """
-        return self.pointwise_conv(self.depthwise_conv(x))
+        return self.pointwise_conv(self.depthwise_conv(x.permute(0, 2, 1))).permute(0, 2, 1)

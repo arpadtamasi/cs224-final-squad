@@ -6,10 +6,18 @@
     "model_dim": 128,
     "context_len": 401,
     "question_len": 51,
-    "use_mask_in_ee": true,
-    "use_mask_in_cq": true,
-    "use_mask_in_me": true,
-    "use_mask_in_ou": true,
+    "use_mask_in_ee": {
+      "hyperparam-search": [true, false]
+    },
+    "use_mask_in_cq": {
+      "hyperparam-search": [true, false]
+    },
+    "use_mask_in_me": {
+      "hyperparam-search": [true, false]
+    },
+    "use_mask_in_ou": {
+      "hyperparam-search": [true, false]
+    },
     "embedding": {
       "kernel_size": 7,
       "dropout": 0.1,

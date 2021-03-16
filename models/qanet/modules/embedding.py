@@ -25,7 +25,7 @@ class Embedding(nn.Module):
         word_embedding = self.word_embedding(w_ids)
 
         embedding = torch.cat([char_embedding, word_embedding], dim=-1)
-        embedding = self.embedding_conv(embedding.permute(0, 2, 1))
+        embedding = self.embedding_conv(embedding)
         embedding = self.highway(embedding)
 
         return embedding
@@ -50,16 +50,15 @@ class CharEmbedding(nn.Module):
                  freeze_char_embedding=False):
         super().__init__()
 
-        self.lookup = nn.Embedding.from_pretrained(char_vectors, freeze=freeze_char_embedding)
-
         embed_dim = char_vectors.shape[-1]
-        self.conv = Initialized_Conv2d(embed_dim, embed_dim, relu=True, bias=False)
-        self.dropout = nn.Dropout(dropout)
+
+        self.model = nn.Sequential(
+            nn.Embedding.from_pretrained(char_vectors, freeze=freeze_char_embedding),
+            nn.Dropout(dropout),
+            Initialized_Conv2d(embed_dim, embed_dim, relu=True, bias=False)
+        )
 
     def forward(self, char_ids):
-        embedding = self.lookup(char_ids)
-        embedding = self.dropout(embedding)
-        embedding = self.conv(embedding.permute(0, 3, 1, 2))
-        embedding, _ = torch.max(embedding, dim=-1)
-
-        return embedding.permute(0, 2, 1)
+        x = self.model(char_ids)
+        embedding, _ = torch.max(x, dim=-2)
+        return embedding

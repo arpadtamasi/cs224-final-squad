@@ -7,11 +7,9 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from .modules.embedding import Embedding
 from .modules.encoder import EncoderBlockConf, Encoder
-from .modules.functional import mask_logits
 from .modules.initialized_conv import Initialized_Conv1d
 
 
@@ -19,12 +17,15 @@ from .modules.initialized_conv import Initialized_Conv1d
 class QANetConf:
     freeze_char_embedding: bool = False
     dropout: float = 0.1
-    trilinear_dropout: float = 0.1
     char_dropout: float = 0.05
     model_dim: int = 128
     context_len: int = 401
     question_len: int = 51
     pad: int = 0
+    use_mask_in_ee: bool = False
+    use_mask_in_cq: bool = False
+    use_mask_in_me: bool = False
+    use_mask_in_ou: bool = False
 
     embedding: EncoderBlockConf = EncoderBlockConf(
         kernel_size=7, layer_dropout=0.9, dropout=0.1,
@@ -37,55 +38,75 @@ class QANetConf:
 
 
 class QANet(nn.Module):
-    def __init__(self, word_mat, char_mat, config: QANetConf, use_performer=False):
+    def __init__(self, word_vectors, char_vectors, config: QANetConf):
         super(QANet, self).__init__()
 
         self.config = config
-        self.emb = Embedding(
-            word_mat, char_mat, config.model_dim,
+        self.embedder = Embedding(
+            word_vectors, char_vectors, config.model_dim,
             word_dropout=config.dropout, char_dropout=config.char_dropout,
             freeze_char_embedding=config.freeze_char_embedding
         )
 
         self.embedding_encoder = Encoder(config.embedding, config.model_dim)
 
-        self.cq_att = CQAttention(d_model=config.model_dim, dropout=config.trilinear_dropout)
-        self.cq_resizer = Initialized_Conv1d(config.model_dim * 4, config.model_dim)
+        self.context_query_attention = ContextQueryAttention(
+            model_dim=config.model_dim,
+            dropout=config.dropout
+        )
+
+        from models.qanet.cq_att import CQAttention
+        self.cq_att = CQAttention(
+            d_model=config.model_dim,
+            dropout=config.dropout
+        )
 
         self.model_encoder = Encoder(config.modeling, config.model_dim)
 
-        self.out = Pointer(config.model_dim)
-        self.PAD = config.pad
-        self.Lc = config.context_len
-        self.Lq = config.question_len
-        self.dropout = nn.Dropout(config.dropout)
-
-    def forward(self, Cwid, Ccid, Qwid, Qcid):
-        maskC = (torch.ones_like(Cwid) * self.PAD != Cwid).float()
-        maskQ = (torch.ones_like(Qwid) * self.PAD != Qwid).float()
-        C, Q = self.emb(Cwid, Ccid), self.emb(Qwid, Qcid)
-
-        Ce = self.embedding_encoder(C, mask=maskC)
-        Qe = self.embedding_encoder(Q, mask=maskQ)
-
-        X = self.cq_att(Ce, Qe, maskC, maskQ)
-        X = self.cq_resizer(X)
-        X = self.dropout(X)
-
-        M1 = self.model_encoder(X, mask=maskC)
-        M2 = self.model_encoder(M1, mask=maskC)
-        M3 = self.model_encoder(M2, mask=maskC)
-
-        p1, p2 = self.out(M1, M2, M3, maskC)
-        return p1, p2
+        self.output = Pointer(config.model_dim)
 
 
-class CQAttention(nn.Module):
-    def __init__(self, d_model, dropout=0.1):
+    def forward(self,
+                context_word_ids, context_char_ids,
+                query_word_ids, query_char_ids):
+        context_mask = torch.zeros_like(context_word_ids) != context_word_ids
+        query_mask = torch.zeros_like(query_word_ids) != query_word_ids
+
+        cme = context_mask if self.config.use_mask_in_ee else None
+        qme = query_mask if self.config.use_mask_in_ee else None
+        cmq, qmq = (context_mask, query_mask) if self.config.use_mask_in_cq else (None, None)
+        cmm = context_mask if self.config.use_mask_in_me else None
+        cmo = context_mask if self.config.use_mask_in_ou else None
+
+        # context embedding and encoding
+        context_emb = self.embedder(context_word_ids, context_char_ids)
+        context_enc = self.embedding_encoder(context_emb, mask=cme)
+
+        # query embedding and encoding
+        query_emb = self.embedder(query_word_ids, query_char_ids)
+        query_enc = self.embedding_encoder(query_emb, mask=qme)
+
+        # context-query attention
+        #context_query_enc = self.context_query_attention(context_enc, query_enc, Cmask=cmq, Qmask=qmq)
+        context_query_enc = self.cq_att(context_enc, query_enc, Cmask=cmq, Qmask=qmq)
+
+        # model encoding
+        from .modules.functional import recurse
+        m0, m1, m2 = recurse(func=lambda m: self.model_encoder(m, mask=cmm), initial=context_query_enc, max=3)
+
+        # output layer
+        log_p1, log_p2 = self.output(m0, m1, m2, mask=cmo)
+
+        return log_p1, log_p2
+
+
+
+class ContextQueryAttention(nn.Module):
+    def __init__(self, model_dim: int, dropout: float):
         super().__init__()
-        w4C = torch.empty(d_model, 1)
-        w4Q = torch.empty(d_model, 1)
-        w4mlu = torch.empty(1, 1, d_model)
+        w4C = torch.empty(model_dim, 1)
+        w4Q = torch.empty(model_dim, 1)
+        w4mlu = torch.empty(1, 1, model_dim)
         nn.init.xavier_uniform_(w4C)
         nn.init.xavier_uniform_(w4Q)
         nn.init.xavier_uniform_(w4mlu)
@@ -96,53 +117,49 @@ class CQAttention(nn.Module):
         nn.init.constant_(bias, 0)
         self.bias = nn.Parameter(bias)
         self.dropout = nn.Dropout(dropout)
+        self.W0 = nn.Linear(model_dim * 3, 1, bias=False)
 
-    def forward(self, C, Q, Cmask, Qmask):
-        C = C.transpose(1, 2)
-        Q = Q.transpose(1, 2)
-        batch_size_c = C.size()[0]
-        batch_size, Lc, d_model = C.shape
-        batch_size, Lq, d_model = Q.shape
-        S = self.trilinear_for_attention(C, Q)
-        Cmask = Cmask.view(batch_size_c, Lc, 1)
-        Qmask = Qmask.view(batch_size_c, 1, Lq)
-        S1 = F.softmax(mask_logits(S, Qmask), dim=2)
-        S2 = F.softmax(mask_logits(S, Cmask), dim=1)
-        A = torch.bmm(S1, Q)
-        B = torch.bmm(torch.bmm(S1, S2.transpose(1, 2)), C)
-        out = torch.cat([C, A, torch.mul(C, A), torch.mul(C, B)], dim=2)
-        return out.transpose(1, 2)
+        self.resizer = Initialized_Conv1d(model_dim * 4, model_dim)
 
-    def trilinear_for_attention(self, C, Q):
-        batch_size, Lc, d_model = C.shape
-        batch_size, Lq, d_model = Q.shape
-        C = self.dropout(C)
-        Q = self.dropout(Q)
-        subres0 = torch.matmul(C, self.w4C).expand([-1, -1, Lq])
-        subres1 = torch.matmul(Q, self.w4Q).expand([-1, -1, Lc]).transpose(1, 2)
-        subres2 = torch.matmul(C * self.w4mlu, Q.transpose(1, 2))
-        res = subres0 + subres1 + subres2
-        res += self.bias
-        return res
+    def forward(self, context, question, Cmask=None, Qmask=None):
+        c = context
+        q = question
+        S = self.trilinear(c, q)
+        S_ = torch.softmax(S, 1)
+        A = torch.bmm(S_, q)
+
+        S__ = torch.softmax(S, 2)
+        s__T = S__.permute(0, 2, 1)
+        B = torch.bmm(torch.bmm(S_, s__T), c)
+
+        out = torch.cat([c, A, c * A, c * B], dim=-1)
+
+        return self.resizer(out)
+
+    def trilinear(self, context, question):
+        batch_size, context_len, model_dim = context.shape
+        _, question_len, _ = question.shape
+        similarity_matrix_shape = torch.zeros(batch_size, context_len, question_len, model_dim)
+        c = context.unsqueeze(2).expand_as(similarity_matrix_shape)
+        q = question.unsqueeze(1).expand_as(similarity_matrix_shape)
+        f_cq = torch.cat([c, q, c * q], dim=-1)
+        return self.W0(f_cq).squeeze(-1)
+
 
 
 class Pointer(nn.Module):
     def __init__(self, d_model):
         super().__init__()
-        self.w1 = Initialized_Conv1d(d_model * 2, 1)
-        self.w2 = Initialized_Conv1d(d_model * 2, 1)
+        self.w1 = nn.Linear(d_model * 2, 1, bias=False)
+        self.w2 = nn.Linear(d_model * 2, 1, bias=False)
 
-    def forward(self, M1, M2, M3, mask):
-        X1 = torch.cat([M1, M2], dim=1)
-        X2 = torch.cat([M1, M3], dim=1)
-        L1 = self.w1(X1)
-        L2 = self.w2(X2)
+    def forward(self, m0, m1, m2, mask=None):
+        x_start = torch.cat([m0, m1], dim=-1)
+        logits_start = self.w1(x_start).squeeze(-1)
+        log_p_start = torch.log_softmax(logits_start, dim=-1).squeeze(-1)
 
-        Y1 = mask_logits(L1.squeeze(), mask)
-        Y2 = mask_logits(L2.squeeze(), mask)
+        x_end = torch.cat([m0, m2], dim=-1)
+        logits_end = self.w2(x_end).squeeze(-1)
+        log_p_end = torch.log_softmax(logits_end, dim=-1).squeeze(-1)
 
-        from util import masked_softmax
-        log_p1 = masked_softmax(Y1.squeeze(), mask, log_softmax=True)
-        log_p2 = masked_softmax(Y2.squeeze(), mask, log_softmax=True)
-
-        return log_p1, log_p2
+        return log_p_start, log_p_end

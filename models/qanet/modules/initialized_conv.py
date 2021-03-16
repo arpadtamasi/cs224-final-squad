@@ -24,7 +24,7 @@ class Initialized_Conv1d(nn.Module):
             self.model = transform
 
     def forward(self, x):
-        return self.model(x)
+        return self.model(x.permute(0, 2, 1)).permute(0, 2, 1)
 
 
 class Initialized_Conv2d(nn.Module):
@@ -48,4 +48,4 @@ class Initialized_Conv2d(nn.Module):
             self.model = transform
 
     def forward(self, x):
-        return self.model(x)
+        return self.model(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)

@@ -13,8 +13,7 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("position_encoding", signal)
 
     def forward(self, x):
-        x = x + self.position_encoding[:, :, :x.size(-1)]
-        return x
+        return x + self.position_encoding[:, :x.shape[1], :]
 
     def _get_timing_signal(self, length, channels, min_timescale=1.0, max_timescale=1.0e4):
         position = np.arange(length)
@@ -31,4 +30,4 @@ class PositionalEncoding(nn.Module):
         signal = np.pad(signal, [[0, 0], [0, channels % 2]], "constant", constant_values=[0.0, 0.0])
         signal = signal.reshape([1, length, channels])
 
-        return torch.from_numpy(signal).type(torch.FloatTensor).transpose(1, 2)
+        return torch.from_numpy(signal).type(torch.FloatTensor)

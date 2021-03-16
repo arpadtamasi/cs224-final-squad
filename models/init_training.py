@@ -66,8 +66,8 @@ def init_qanet2_training(args, char_vectors, word_vectors, config):
 
     model_config = config.get('model', {})
     model = QANet(
-        word_mat=word_vectors,
-        char_mat=char_vectors,
+        word_vectors=word_vectors,
+        char_vectors=char_vectors,
         config=load_dataclass(model_config, QANetConf),
     )
     optimizer = __qanet_adam_optimizer(model, config)
