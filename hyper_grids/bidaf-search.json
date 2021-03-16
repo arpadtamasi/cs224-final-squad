@@ -1,5 +1,5 @@
 {
-  "model": {
+  "model_encoder": {
     "hidden_size": 100,
     "drop_prob": 0.0
   },

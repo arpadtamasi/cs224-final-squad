@@ -3,7 +3,7 @@ from torch import nn as nn
 from torch.nn import functional as F
 
 from .initialized_conv import Initialized_Conv1d
-from .functional import mask_logits
+from .util import mask_logits
 from dataclasses import dataclass
 
 @dataclass

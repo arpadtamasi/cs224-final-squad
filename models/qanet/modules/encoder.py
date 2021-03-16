@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn as nn
 
-from .cnn import DepthwiseSeparableConv
+from .dep_sep_conv import DepthwiseSeparableConv
 from .initialized_conv import Initialized_Conv1d
 from .positional_encoding import PositionalEncoding
 from .self_attention import SelfAttention, PerformerConf

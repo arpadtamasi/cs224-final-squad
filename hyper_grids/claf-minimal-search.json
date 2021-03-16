@@ -1,11 +1,11 @@
 {
-  "model": {
+  "model_encoder": {
     "aligned_query_embedding": false,
     "freeze_char_embedding": false,
     "dropout": 0.1,
     "char_dropout": 0.05,
     "model_dim": 128,
-    "embedding": {
+    "input_encoder": {
       "kernel_size": 5,
       "layer_dropout": 0,
       "dropout": {
