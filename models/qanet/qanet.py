@@ -54,20 +54,22 @@ class QANet(nn.Module):
                 context_word_ids, context_char_ids,
                 query_word_ids, query_char_ids):
         # context embedding and encoding
+        context_mask = torch.zeros_like(context_word_ids) != context_word_ids
+        query_mask = torch.zeros_like(query_word_ids) != query_word_ids
         context = self.input_encoder(
-            self.embedder(context_word_ids, context_char_ids)
+            self.embedder(context_word_ids, context_char_ids),
         )
 
         # query embedding and encoding
         query = self.input_encoder(
-            self.embedder(query_word_ids, query_char_ids)
+            self.embedder(query_word_ids, query_char_ids),
         )
 
         # context-query attention
         model = self.context_query_attention(
             context, query,
-            c_mask=(torch.zeros_like(context_word_ids) != context_word_ids),
-            q_mask=(torch.zeros_like(query_word_ids) != query_word_ids)
+            c_mask=context_mask,
+            q_mask=query_mask
         )
 
         # model encoding

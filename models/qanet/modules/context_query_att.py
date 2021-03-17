@@ -25,9 +25,7 @@ class ContextQueryAttention(nn.Module):
         s1 = masked_softmax(s, q_mask.view(batch_size, 1, q_len), dim=2)  # (batch_size, c_len, q_len)
         s2 = masked_softmax(s, c_mask.view(batch_size, c_len, 1), dim=1)  # (batch_size, c_len, q_len)
 
-        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
         a = torch.bmm(s1, q)
-        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
         b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
         x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
